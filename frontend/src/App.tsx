@@ -33,7 +33,7 @@ export default function App() {
   const [activeTool, setActiveTool] = useState<DrawTool>('brush');
   const [leaderboard, setLeaderboard] = useState<Player[] | undefined>();
   const [winnerName, setWinnerName] = useState<string | undefined>();
-  const [roundWasGuessed, setRoundWasGuessed] = useState(true);
+  const [roundWasGuessed, setRoundWasGuessed] = useState(false);
   const [lastGuesserName, setLastGuesserName] = useState<string | null>(null);
   const [transitionSeconds, setTransitionSeconds] = useState(4);
 

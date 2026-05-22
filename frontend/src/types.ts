@@ -36,6 +36,8 @@ export interface ChatMessage {
   /** Shown in red when nobody guessed the word */
   wordMissed?: boolean;
   revealedWord?: string;
+  /** Masked word (underscores) displayed in correct guess chat */
+  maskedWord?: string;
 }
 
 export interface GameState {

@@ -6,6 +6,16 @@ class MessageHandler {
     this.room = room;
   }
 
+  maskWordForChat(word) {
+    if (typeof word !== 'string' || word.length === 0) {
+      return '___';
+    }
+    return word
+      .split('')
+      .map((char) => (char === ' ' ? ' ' : '_'))
+      .join('');
+  }
+
   broadcast(event, payload) {
     this.room.io.to(this.room.roomId).emit(event, payload);
   }
@@ -23,32 +33,69 @@ class MessageHandler {
       isCorrect: options.isCorrect ?? false,
       points: options.points ?? 0,
       system: options.system ?? false,
+      maskedWord: options.maskedWord ?? undefined,
     });
   }
 
   sendCorrectGuess(playerId, playerName, guessText, points) {
     const word = this.room.game?.currentWord;
+    const maskedWord = this.maskWordForChat(word || guessText);
 
+    // ✅ Never broadcast the real word to all clients
     this.broadcast('guess_result', {
       correct: true,
       playerId,
       playerName,
       points,
-      word,
+      word: maskedWord,           // masked for all clients
     });
 
     this.broadcast('correct_guess', {
       playerId,
       playerName,
-      guessText,
+      guesserName: playerName,
+      guessText: maskedWord,      // mask the submitted guess too
       points,
-      word,
+      word: maskedWord,           // masked for all clients
+      wasGuessed: true,
     });
 
-    this.sendChat(playerId, playerName, guessText, {
+    // ✅ Only the drawer needs the real word — send privately
+    const drawerSocketId = this.room.game?.drawerSocketId;
+    if (drawerSocketId && word) {
+      this.emitTo(drawerSocketId, 'reveal_word', { word });
+    }
+
+    this.sendChat(playerId, playerName, `${playerName} guessed correctly! "${maskedWord}"`, {
       isGuess: true,
       isCorrect: true,
       points,
+      maskedWord,
+    });
+  }
+
+  sendRoundGuessed(guesserName, word) {
+    this.sendChat('', '', `${guesserName} guessed the word correctly`, {
+      system: true,
+      isGuess: false,
+    });
+    this.broadcast('round_guessed', {
+      wasGuessed: true,
+      guesserName,
+      word: this.maskWordForChat(word),   // ✅ mask here too
+    });
+  }
+
+  sendRoundTimeout(word) {
+    // ✅ Timeout is when you WANT to reveal — this is intentional
+    this.broadcast('chat_message', {
+      playerId: '',
+      playerName: '',
+      text: "Time's up! Nobody guessed the word:",
+      isGuess: false,
+      system: true,
+      wordMissed: true,
+      revealedWord: word,         // intentional reveal on timeout
     });
   }
 

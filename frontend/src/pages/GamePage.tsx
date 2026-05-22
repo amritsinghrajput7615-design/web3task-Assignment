@@ -132,8 +132,8 @@ export function GamePage({
           )}
           {phase === 'round_end' && (
             <p style={{ fontWeight: 700 }}>
-              {roundWasGuessed && lastGuesserName
-                ? `${lastGuesserName} guessed it!`
+              {roundWasGuessed
+                ? `${lastGuesserName ?? 'Someone'} guessed it!`
                 : 'Round over — next drawer soon...'}
             </p>
           )}
@@ -177,9 +177,9 @@ export function GamePage({
                   roundWasGuessed ? 'round-guessed' : 'round-missed'
                 }`}
               >
-                {roundWasGuessed && lastGuesserName ? (
+                {roundWasGuessed ? (
                   <>
-                    <h3>{lastGuesserName} guessed correctly!</h3>
+                    <h3>{lastGuesserName ?? 'Someone'} guessed correctly!</h3>
                     <p className="round-end-label">The word was:</p>
                     <span className="word-reveal-guessed">{currentWord}</span>
                   </>

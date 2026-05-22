@@ -37,10 +37,6 @@ export interface GameSocketState {
   transitionSeconds: number;
 }
 
-type Setters = {
-  [K in keyof GameSocketState]: React.Dispatch<React.SetStateAction<GameSocketState[K]>>;
-};
-
 export function useGameSocket(
   _state: GameSocketState,
   setters: Partial<{
@@ -81,6 +77,9 @@ export function useGameSocket(
     `${window.location.origin}${window.location.pathname}`.replace(/\/$/, '');
 
   const applyGameState = (data: Record<string, unknown>) => {
+    // ✅ Never let game_state override round_end — onRoundEnd owns that phase entirely
+    if (data.phase === 'round_end') return;
+
     if (data.phase) setters.setPhase?.(data.phase as GamePhase);
     if (data.hints !== undefined) setters.setHints?.(data.hints as string);
     if (data.timeLeft !== undefined) setters.setTimeLeft?.(data.timeLeft as number);
@@ -92,49 +91,34 @@ export function useGameSocket(
     if (data.totalRounds !== undefined) setters.setTotalRounds?.(data.totalRounds as number);
     if (data.players) setters.setPlayers?.(data.players as Player[]);
     if (data.wordChoices) setters.setWordOptions?.(data.wordChoices as string[]);
-    if (data.phase === 'drawing') setters.setStrokes?.([]);
-    if (data.phase === 'round_end' || data.phase === 'word_select') {
+    if (data.phase === 'drawing') {
+      setters.setStrokes?.([]);
+      if (data.timeLeft !== undefined) setters.setTimeLeft?.(data.timeLeft as number);
+    }
+    if (data.phase === 'word_select') {
       setters.setTimeLeft?.(0);
+      if (data.wordSelectTimeLeft !== undefined) {
+        setters.setWordSelectTimeLeft?.(data.wordSelectTimeLeft as number);
+      }
     }
   };
 
   const onRoundEnd = (data: {
     word: string;
-    wasGuessed: boolean;
+    wasGuessed?: boolean;
     guesserName?: string;
     transitionSeconds?: number;
     scores: Player[];
   }) => {
-    setters.setPhase?.('round_end');
+    const guessed = Boolean(data.wasGuessed);
+    setters.setRoundWasGuessed?.(guessed);
+    if (data.guesserName) setters.setLastGuesserName?.(data.guesserName);
+    if (data.transitionSeconds) setters.setTransitionSeconds?.(data.transitionSeconds);
     setters.setCurrentWord?.(data.word);
-    setters.setRoundWasGuessed?.(data.wasGuessed);
     setters.setPlayers?.(data.scores);
     setters.setTimeLeft?.(0);
     setters.setWordSelectTimeLeft?.(0);
-    if (data.guesserName) setters.setLastGuesserName?.(data.guesserName);
-    if (data.transitionSeconds) setters.setTransitionSeconds?.(data.transitionSeconds);
-
-    if (data.word) {
-      if (data.wasGuessed && data.guesserName) {
-        addMessage({
-          playerId: '',
-          playerName: '',
-          text: `${data.guesserName} guessed correctly! The word was "${data.word}"`,
-          isGuess: false,
-          system: true,
-        });
-      } else if (!data.wasGuessed) {
-        addMessage({
-          playerId: '',
-          playerName: '',
-          text: "Time's up! Nobody guessed the word:",
-          isGuess: false,
-          system: true,
-          wordMissed: true,
-          revealedWord: data.word,
-        });
-      }
-    }
+    setters.setPhase?.('round_end');
   };
 
   useEffect(() => {
@@ -186,11 +170,15 @@ export function useGameSocket(
 
     socket.on('room_created', applyRoom);
     socket.on('room_joined', applyRoom);
-    socket.on('player_joined', ({ players: p }: { players: Player[] }) => setters.setPlayers?.(p));
+
+    socket.on('player_joined', ({ players: p }: { players: Player[] }) =>
+      setters.setPlayers?.(p)
+    );
+
     socket.on('player_left', ({ players: p, playerName: leftName }: { players: Player[]; playerName?: string }) => {
       setters.setPlayers?.(p);
       if (leftName) {
-        addMessage({ playerId: '', playerName: '', text: `${leftName} left the room`, isGuess: false, system: true });
+        addMessage({ playerId: '', playerName: '', text: `${leftName} left the room`, isGuess: false, isCorrect: false, points: 0, system: true });
       }
     });
 
@@ -206,55 +194,58 @@ export function useGameSocket(
       isDrawer?: boolean;
       hints?: string;
     }) => {
+      // ✅ Reset roundWasGuessed when a new turn starts
+      setters.setRoundWasGuessed?.(false);
+      setters.setLastGuesserName?.(null);
       setters.setPhase?.('word_select');
       setters.setDrawerId?.(data.drawerId);
       setters.setRound?.(data.round);
       setters.setTotalRounds?.(data.totalRounds);
-      setters.setTimeLeft?.(data.drawTime);
+      setters.setTimeLeft?.(0);
       setters.setWordSelectTimeLeft?.(data.wordSelectTimeLeft ?? 10);
       setters.setStrokes?.([]);
       setters.setCurrentWord?.(null);
       setters.setWordOptions?.(data.wordOptions ?? data.wordChoices ?? null);
       setters.setHints?.(data.hints ?? '');
       setters.setActiveTool?.('brush');
-      setters.setLastGuesserName?.(null);
 
       if (data.isDrawer && (data.wordOptions || data.wordChoices)) {
-        addMessage({
-          playerId: '',
-          playerName: '',
-          text: `Choose a word to draw! (${data.wordSelectTimeLeft ?? 10}s)`,
-          isGuess: false,
-          system: true,
-        });
+        addMessage({ playerId: '', playerName: '', text: `Choose a word to draw! (${data.wordSelectTimeLeft ?? 10}s)`, isGuess: false, isCorrect: false, points: 0, system: true });
       } else {
-        addMessage({
-          playerId: '',
-          playerName: '',
-          text: `${data.drawerName} is choosing a word...`,
-          isGuess: false,
-          system: true,
-        });
+        addMessage({ playerId: '', playerName: '', text: `${data.drawerName} is choosing a word...`, isGuess: false, isCorrect: false, points: 0, system: true });
       }
     };
 
     socket.on('round_start', onTurnStart);
 
-    const onWordSelectTimer = (data: { timeLeft: number }) => {
+    socket.on('word_select_timer', (data: { timeLeft: number }) => {
       setters.setWordSelectTimeLeft?.(data.timeLeft);
-    };
-    socket.on('word_select_timer', onWordSelectTimer);
+    });
+
+    socket.on('selectionTimerUpdate', (data: { timeLeft: number }) => {
+      setters.setWordSelectTimeLeft?.(data.timeLeft);
+    });
+
+    socket.on('word_selection_started', (data: { wordSelectTimeLeft?: number; drawerId?: string }) => {
+      setters.setPhase?.('word_select');
+      setters.setWordSelectTimeLeft?.(data.wordSelectTimeLeft ?? 10);
+      setters.setTimeLeft?.(0);
+      if (data.drawerId) setters.setDrawerId?.(data.drawerId);
+    });
+
     socket.on('timer_update', (data: { timeLeft?: number; wordSelectTimeLeft?: number; phase?: string }) => {
-      if (data.phase === 'word_select' || data.wordSelectTimeLeft !== undefined) {
+      if (data.phase === 'word_select') {
         setters.setWordSelectTimeLeft?.(data.wordSelectTimeLeft ?? data.timeLeft ?? 0);
+        setters.setTimeLeft?.(0);
+        return;
       }
-      if (data.phase === 'drawing' || (data.timeLeft !== undefined && data.phase !== 'word_select')) {
+      if (data.phase === 'drawing') {
         setters.setTimeLeft?.(data.timeLeft ?? 0);
       }
     });
 
     socket.on('word_select_timeout', ({ message }: { message: string }) => {
-      addMessage({ playerId: '', playerName: '', text: message, isGuess: false, system: true });
+      addMessage({ playerId: '', playerName: '', text: message, isGuess: false, isCorrect: false, points: 0, system: true });
     });
 
     const onWordChosen = ({ word }: { word: string }) => {
@@ -267,15 +258,27 @@ export function useGameSocket(
 
     socket.on('game_state', applyGameState);
 
-    socket.on('timer', ({ timeLeft: t }: { timeLeft: number }) => setters.setTimeLeft?.(t));
+    socket.on('timer', ({ timeLeft: t, phase }: { timeLeft: number; phase?: string }) => {
+      if (phase === 'drawing' || phase === undefined) {
+        setters.setTimeLeft?.(t);
+      }
+    });
 
-    const onCorrectGuess = (data: { guesserName?: string; word?: string; wasGuessed?: boolean }) => {
-      setters.setPhase?.('round_end');
-      setters.setRoundWasGuessed?.(data.wasGuessed ?? true);
+    socket.on('roundTimerUpdate', (data: { timeLeft: number }) => {
+      setters.setTimeLeft?.(data.timeLeft);
+    });
+
+    const onCorrectGuess = (data: {
+      guesserName?: string;
+      playerName?: string;
+      wasGuessed?: boolean;
+      word?: string;
+    }) => {
+      setters.setRoundWasGuessed?.(true);
       setters.setTimeLeft?.(0);
       setters.setWordSelectTimeLeft?.(0);
-      if (data.word) setters.setCurrentWord?.(data.word);
-      if (data.guesserName) setters.setLastGuesserName?.(data.guesserName);
+      const name = data.guesserName ?? data.playerName;
+      if (name) setters.setLastGuesserName?.(name);
     };
     socket.on('round_guessed', onCorrectGuess);
     socket.on('correct_guess', onCorrectGuess);
@@ -283,6 +286,7 @@ export function useGameSocket(
     socket.on('draw_data', (stroke: Stroke) => {
       setters.setStrokes?.((prev) => [...prev, stroke]);
     });
+
     socket.on('draw_move', ({ x, y, strokeId }: { x: number; y: number; strokeId: number }) => {
       setters.setStrokes?.((prev) => {
         const copy = [...prev];
@@ -291,16 +295,20 @@ export function useGameSocket(
         return copy;
       });
     });
+
     socket.on('canvas_clear', () => setters.setStrokes?.([]));
+
     socket.on('draw_undo', ({ strokes: s }: { strokes?: Stroke[] }) => {
       if (s) setters.setStrokes?.(s);
       else setters.setStrokes?.((prev) => prev.slice(0, -1));
     });
 
-    socket.on('guess_result', (data: { correct: boolean; word?: string }) => {
-      if (data.correct && data.word) setters.setCurrentWord?.(data.word);
+    // ✅ guess_result — word is masked on backend, nothing to do here
+    socket.on('guess_result', (data: { correct: boolean; playerId?: string; points?: number }) => {
+      void data;
     });
 
+    // ✅ chat_message — maskedWord field used by ChatPanel, msg.text never shown for correct guesses
     socket.on('chat_message', (msg: ChatMessage) => addMessage(msg));
 
     socket.on('round_end', onRoundEnd);
@@ -312,10 +320,8 @@ export function useGameSocket(
       setters.setWinnerName?.(data.winner?.name);
     });
 
-    return () => {
-      socket.disconnect();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- socket handlers use stable setters
+    return () => { socket.disconnect(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addMessage, roomCodeFromUrl]);
 
   return socketRef;

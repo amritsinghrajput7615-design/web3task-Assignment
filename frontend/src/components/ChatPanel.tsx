@@ -48,7 +48,10 @@ export function ChatPanel({ messages, disabled, placeholder, myId, onSend }: Pro
                   <span className="name">{msg.playerName}</span>
                   <span className="correct-label">guessed correctly!</span>
                   <span className="points-badge">+{msg.points} pts</span>
-                  {msg.text && <span className="guess-word">"{msg.text}"</span>}
+                  {/* ✅ maskedWord shows "____" — msg.text is never rendered here */}
+                  {msg.maskedWord && (
+                    <span className="guess-word">"{msg.maskedWord}"</span>
+                  )}
                 </div>
               ) : msg.wordMissed && msg.revealedWord ? (
                 <div className="missed-word-content">

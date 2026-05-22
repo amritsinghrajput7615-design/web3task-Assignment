@@ -22,7 +22,8 @@ function registerChatHandlers(socket) {
     const player = room.getPlayerBySocketId(socket.id);
     if (!player) return;
 
-    if (room.game.phase === 'drawing' && player.id !== room.game.currentDrawerId) {
+    // Prevent the drawer from sending chat messages during drawing (they should not give hints)
+    if (room.game.phase === 'drawing' && player.id === room.game.currentDrawerId) {
       return;
     }
 
