@@ -4,22 +4,33 @@ function generateRoomId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
+function buildRoomPayload(room, socket, clientOrigin) {
+  const invite = room.getInvitePayload(clientOrigin);
+  return {
+    roomId: room.roomId,
+    roomCode: invite.roomCode,
+    inviteLink: invite.inviteLink,
+    invitePath: invite.invitePath,
+    hostId: room.hostId,
+    settings: room.settings,
+    players: room.getPublicPlayers(),
+    player: room.getPublicPlayers().find((p) => p.id === socket.id),
+  };
+}
+
 function registerRoomHandlers(io, socket) {
-  socket.on('create_room', ({ hostName, settings }) => {
+  socket.on('create_room', ({ hostName, settings, clientOrigin }) => {
     const roomId = generateRoomId();
     const room = roomStore.createRoom(roomId, socket.id, hostName, settings);
     socket.join(room.roomId);
 
-    socket.emit('room_created', {
-      roomId: room.roomId,
-      hostId: socket.id,
-      settings: room.settings,
-      players: room.getPublicPlayers(),
-    });
+    socket.emit('room_created', buildRoomPayload(room, socket, clientOrigin || ''));
   });
 
-  socket.on('join_room', ({ roomId, playerName }) => {
-    const room = roomStore.getRoom(roomId);
+  socket.on('join_room', ({ roomId, playerName, clientOrigin }) => {
+    const code = roomId?.toUpperCase();
+    const room = roomStore.getRoom(code);
+
     if (!room) {
       socket.emit('error', { message: 'Room not found' });
       return;
@@ -37,19 +48,16 @@ function registerRoomHandlers(io, socket) {
 
     socket.join(room.roomId);
 
-    const player = room.getPublicPlayers().find((p) => p.id === socket.id);
+    const payload = buildRoomPayload(room, socket, clientOrigin || '');
 
     room.broadcast('player_joined', {
-      player,
-      players: room.getPublicPlayers(),
+      player: payload.player,
+      players: payload.players,
+      roomCode: payload.roomCode,
+      inviteLink: payload.inviteLink,
     });
 
-    socket.emit('room_joined', {
-      roomId: room.roomId,
-      hostId: room.hostId,
-      settings: room.settings,
-      players: room.getPublicPlayers(),
-    });
+    socket.emit('room_joined', payload);
   });
 
   socket.on('start_game', () => {
@@ -73,6 +81,7 @@ function registerRoomHandlers(io, socket) {
     socket.leave(room.roomId);
 
     if (result.empty) {
+      room.game.abandonHistory();
       roomStore.deleteRoom(room.roomId);
       return;
     }

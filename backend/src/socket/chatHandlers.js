@@ -11,12 +11,7 @@ function registerChatHandlers(socket) {
     const result = room.game.handleGuess(player.id, player.name, text);
 
     if (!result.correct && result.broadcast) {
-      room.broadcast('chat_message', {
-        playerId: player.id,
-        playerName: player.name,
-        text,
-        isGuess: true,
-      });
+      room.messageHandler.sendWrongGuess(player.id, player.name, text);
     }
   });
 
@@ -31,12 +26,7 @@ function registerChatHandlers(socket) {
       return;
     }
 
-    room.broadcast('chat_message', {
-      playerId: player.id,
-      playerName: player.name,
-      text,
-      isGuess: false,
-    });
+    room.messageHandler.sendChat(player.id, player.name, text, { isGuess: false });
   });
 }
 

@@ -19,6 +19,8 @@ export default function App() {
   const [myId, setMyId] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [roomId, setRoomId] = useState('');
+  const [roomCode, setRoomCode] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
   const [hostId, setHostId] = useState('');
   const [settings, setSettings] = useState<RoomSettings | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -36,7 +38,8 @@ export default function App() {
   const [isEraser, setIsEraser] = useState(false);
   const [leaderboard, setLeaderboard] = useState<Player[] | undefined>();
   const [winnerName, setWinnerName] = useState<string | undefined>();
-  const pendingJoin = useRef<{ roomId: string; name: string } | null>(null);
+  const [roundWasGuessed, setRoundWasGuessed] = useState(true);
+  const pendingJoin = useRef<{ roomId: string; playerName: string; clientOrigin: string } | null>(null);
 
   const addMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev.slice(-100), msg]);
@@ -56,7 +59,11 @@ export default function App() {
       } else if (code) {
         const savedName = sessionStorage.getItem('playerName');
         if (savedName) {
-          socket.emit('join_room', { roomId: code.toUpperCase(), playerName: savedName });
+          socket.emit('join_room', {
+            roomId: code.toUpperCase(),
+            playerName: savedName,
+            clientOrigin: clientOrigin(),
+          });
         }
       }
     });
@@ -65,25 +72,27 @@ export default function App() {
 
     socket.on('error', ({ message }: { message: string }) => setError(message));
 
-    socket.on('room_created', (data) => {
+    const applyRoomData = (data: {
+      roomId: string;
+      roomCode?: string;
+      inviteLink?: string;
+      hostId: string;
+      settings: RoomSettings;
+      players: Player[];
+    }) => {
       setError('');
       setRoomId(data.roomId);
+      setRoomCode(data.roomCode || data.roomId);
+      setInviteLink(data.inviteLink || `${window.location.origin}${window.location.pathname}?room=${data.roomId}`);
       setHostId(data.hostId);
       setSettings(data.settings);
       setPlayers(data.players);
       setPhase('lobby');
       window.history.replaceState({}, '', `?room=${data.roomId}`);
-    });
+    };
 
-    socket.on('room_joined', (data) => {
-      setError('');
-      setRoomId(data.roomId);
-      setHostId(data.hostId);
-      setSettings(data.settings);
-      setPlayers(data.players);
-      setPhase('lobby');
-      window.history.replaceState({}, '', `?room=${data.roomId}`);
-    });
+    socket.on('room_created', applyRoomData);
+    socket.on('room_joined', applyRoomData);
 
     socket.on('player_joined', ({ players: p }: { players: Player[] }) => {
       setPlayers(p);
@@ -156,32 +165,39 @@ export default function App() {
       else setStrokes((prev) => prev.slice(0, -1));
     });
 
-    socket.on('guess_result', (data: { correct: boolean; playerName: string; points: number; word?: string }) => {
-      if (data.correct) {
-        addMessage({
-          playerId: '',
-          playerName: '',
-          text: `${data.playerName} guessed the word! (+${data.points})`,
-          isGuess: false,
-          system: true,
-        });
-        if (data.word) setCurrentWord(data.word);
-      }
+    socket.on('guess_result', (data: { correct: boolean; playerId: string; points: number; word?: string }) => {
+      if (data.correct && data.word) setCurrentWord(data.word);
     });
 
     socket.on('chat_message', (msg: ChatMessage) => addMessage(msg));
 
-    socket.on('round_end', (data: { word: string; scores: Player[] }) => {
+    socket.on('round_end', (data: { word: string; wasGuessed: boolean; scores: Player[] }) => {
       setPhase('round_end');
       setCurrentWord(data.word);
+      setRoundWasGuessed(data.wasGuessed);
       setPlayers(data.scores);
-      addMessage({
-        playerId: '',
-        playerName: '',
-        text: `Round over! The word was "${data.word}"`,
-        isGuess: false,
-        system: true,
-      });
+
+      if (data.word) {
+        if (data.wasGuessed) {
+          addMessage({
+            playerId: '',
+            playerName: '',
+            text: `Round over! The word was "${data.word}"`,
+            isGuess: false,
+            system: true,
+          });
+        } else {
+          addMessage({
+            playerId: '',
+            playerName: '',
+            text: "Time's up! Nobody guessed the word:",
+            isGuess: false,
+            system: true,
+            wordMissed: true,
+            revealedWord: data.word,
+          });
+        }
+      }
     });
 
     socket.on('game_over', (data: { winner: Player | null; leaderboard: Player[] }) => {
@@ -196,21 +212,28 @@ export default function App() {
     };
   }, [addMessage, searchParams]);
 
+  const clientOrigin = () => `${window.location.origin}${window.location.pathname}`.replace(/\/$/, '');
+
   const createRoom = (name: string, roomSettings: RoomSettings) => {
     sessionStorage.setItem('playerName', name);
     setPlayerName(name);
     setError('');
-    socketRef.current?.emit('create_room', { hostName: name, settings: roomSettings });
+    socketRef.current?.emit('create_room', {
+      hostName: name,
+      settings: roomSettings,
+      clientOrigin: clientOrigin(),
+    });
   };
 
   const joinRoom = (code: string, name: string) => {
     sessionStorage.setItem('playerName', name);
     setPlayerName(name);
     setError('');
+    const payload = { roomId: code, playerName: name, clientOrigin: clientOrigin() };
     if (!socketRef.current?.connected) {
-      pendingJoin.current = { roomId: code, playerName: name };
+      pendingJoin.current = payload;
     } else {
-      socketRef.current.emit('join_room', { roomId: code, playerName: name });
+      socketRef.current.emit('join_room', payload);
     }
     window.history.replaceState({}, '', `?room=${code}`);
   };
@@ -218,9 +241,11 @@ export default function App() {
   const startGame = () => socketRef.current?.emit('start_game');
 
   const copyLink = () => {
-    const url = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
-    navigator.clipboard.writeText(url);
-    addMessage({ playerId: '', playerName: '', text: 'Invite link copied!', isGuess: false, system: true });
+    navigator.clipboard.writeText(inviteLink || `${window.location.origin}?room=${roomId}`);
+  };
+
+  const copyCode = () => {
+    navigator.clipboard.writeText(roomCode || roomId);
   };
 
   const chooseWord = (word: string) => socketRef.current?.emit('word_chosen', { word });
@@ -256,6 +281,8 @@ export default function App() {
   const resetHome = () => {
     setPhase('home');
     setRoomId('');
+    setRoomCode('');
+    setInviteLink('');
     setPlayers([]);
     setMessages([]);
     setStrokes([]);
@@ -280,12 +307,15 @@ export default function App() {
     return (
       <LobbyPage
         roomId={roomId}
+        roomCode={roomCode}
+        inviteLink={inviteLink}
         hostId={hostId}
         myId={myId}
         players={players}
         settings={settings}
         onStart={startGame}
         onCopyLink={copyLink}
+        onCopyCode={copyCode}
       />
     );
   }
@@ -302,6 +332,7 @@ export default function App() {
       timeLeft={timeLeft}
       round={round}
       totalRounds={totalRounds}
+      roundWasGuessed={roundWasGuessed}
       wordOptions={wordOptions}
       currentWord={currentWord}
       strokes={strokes}
@@ -321,6 +352,8 @@ export default function App() {
       onStrokeMove={handleStrokeMove}
       onStrokeEnd={handleStrokeEnd}
       onGuess={handleGuess}
+      myId={myId}
+      roomCode={roomCode}
       leaderboard={leaderboard}
       winnerName={winnerName}
       onBackHome={resetHome}

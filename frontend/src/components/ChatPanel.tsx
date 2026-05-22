@@ -5,10 +5,11 @@ interface Props {
   messages: ChatMessage[];
   disabled: boolean;
   placeholder: string;
+  myId: string;
   onSend: (text: string, isGuess: boolean) => void;
 }
 
-export function ChatPanel({ messages, disabled, placeholder, onSend }: Props) {
+export function ChatPanel({ messages, disabled, placeholder, myId, onSend }: Props) {
   const [text, setText] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -27,15 +28,42 @@ export function ChatPanel({ messages, disabled, placeholder, onSend }: Props) {
   return (
     <div className="chat-panel">
       <div className="chat-messages">
-        {messages.map((msg, i) => (
-          <div
-            key={`${msg.playerId}-${i}-${msg.text}`}
-            className={`chat-msg ${msg.system ? 'system' : ''} ${msg.isGuess ? 'guess' : ''} ${msg.text.includes('guessed') ? 'correct' : ''}`}
-          >
-            {!msg.system && <span className="name">{msg.playerName}:</span>}
-            {msg.text}
-          </div>
-        ))}
+        {messages.map((msg, i) => {
+          const isMyCorrect = msg.isCorrect && msg.playerId === myId;
+          const classNames = [
+            'chat-msg',
+            msg.system ? 'system' : '',
+            msg.isGuess && !msg.isCorrect ? 'guess' : '',
+            msg.isCorrect ? 'correct-guess' : '',
+            msg.wordMissed ? 'missed-word' : '',
+            isMyCorrect ? 'my-correct' : '',
+          ]
+            .filter(Boolean)
+            .join(' ');
+
+          return (
+            <div key={`${msg.playerId}-${i}-${msg.text}`} className={classNames}>
+              {msg.isCorrect ? (
+                <div className="correct-guess-content">
+                  <span className="name">{msg.playerName}</span>
+                  <span className="correct-label">guessed correctly!</span>
+                  <span className="points-badge">+{msg.points} pts</span>
+                  {msg.text && <span className="guess-word">"{msg.text}"</span>}
+                </div>
+              ) : msg.wordMissed && msg.revealedWord ? (
+                <div className="missed-word-content">
+                  <span>{msg.text}</span>
+                  <span className="word-reveal-missed">{msg.revealedWord}</span>
+                </div>
+              ) : (
+                <>
+                  {!msg.system && <span className="name">{msg.playerName}:</span>}
+                  {msg.text}
+                </>
+              )}
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
       <form className="chat-input-row" onSubmit={submit}>

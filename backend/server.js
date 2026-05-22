@@ -1,29 +1,43 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const path = require('path');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const wordsData = require('./data/words.json');
-const { setWordBank } = require('./src/classes/Game');
+const { database } = require('./src/config/database');
+const { wordService } = require('./src/services/WordService');
+const { gameHistoryService } = require('./src/services/GameHistoryService');
 const { roomStore } = require('./src/store/roomStore');
-const { registerRoomHandlers } = require('./src/socket/roomHandlers');
-const { registerGameHandlers } = require('./src/socket/gameHandlers');
-const { registerDrawHandlers } = require('./src/socket/drawHandlers');
-const { registerChatHandlers } = require('./src/socket/chatHandlers');
+const { SocketHandlerRegistry } = require('./src/handlers/SocketHandlerRegistry');
 
 const allWords = Object.values(wordsData).flat();
-setWordBank(allWords);
+wordService.setFallback(allWords);
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true });
+  res.json({
+    ok: true,
+    database: database.isConnected(),
+    persistence: 'game_history_only',
+  });
 });
 
 app.get('/api/words/categories', (_req, res) => {
   res.json(Object.keys(wordsData));
+});
+
+app.get('/api/history/room/:roomId', async (req, res) => {
+  const history = await gameHistoryService.getByRoomId(req.params.roomId);
+  res.json({ roomId: req.params.roomId.toUpperCase(), history });
+});
+
+app.get('/api/history/recent', async (_req, res) => {
+  const games = await gameHistoryService.getRecentCompleted();
+  res.json({ games });
 });
 
 const clientDist = path.join(__dirname, '../frontend/dist');
@@ -41,15 +55,22 @@ const io = new Server(server, {
 });
 
 roomStore.setIO(io);
+const socketRegistry = new SocketHandlerRegistry(io);
 
 io.on('connection', (socket) => {
-  registerRoomHandlers(io, socket);
-  registerGameHandlers(socket);
-  registerDrawHandlers(socket);
-  registerChatHandlers(socket);
+  socketRegistry.register(socket);
 });
 
-const PORT = process.env.PORT || 3002;
-server.listen(PORT, () => {
-  console.log(`Skribbl server running on http://localhost:${PORT}`);
-});
+async function start() {
+  await database.connect();
+
+  const PORT = process.env.PORT || 3001;
+  server.listen(PORT, () => {
+    console.log(`Skribbl server running on http://localhost:${PORT}`);
+    console.log(
+      `MongoDB: ${database.isConnected() ? 'connected (history + leaderboard)' : 'not configured'}`
+    );
+  });
+}
+
+start();

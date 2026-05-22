@@ -269,9 +269,161 @@ label {
   color: var(--muted);
 }
 
-.chat-msg.correct {
-  color: var(--accent);
+.chat-msg.correct-guess {
+  background: linear-gradient(90deg, rgba(46, 204, 113, 0.35), rgba(46, 204, 113, 0.15));
+  border: 2px solid #2ecc71;
+  border-radius: 10px;
+  padding: 0.55rem 0.75rem;
+  color: #d4ffe4;
   font-weight: 700;
+  animation: correctPop 0.4s ease;
+}
+
+.chat-msg.correct-guess.my-correct {
+  background: linear-gradient(90deg, rgba(46, 204, 113, 0.55), rgba(39, 174, 96, 0.3));
+  border-color: #27ae60;
+  box-shadow: 0 0 12px rgba(46, 204, 113, 0.45);
+}
+
+.correct-guess-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+}
+
+.correct-guess-content .name {
+  color: #fff;
+}
+
+.correct-label {
+  color: #a8f5c8;
+}
+
+.points-badge {
+  background: #27ae60;
+  color: #fff;
+  padding: 0.15rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.guess-word {
+  color: #b8e6c8;
+  font-weight: 600;
+  font-style: italic;
+}
+
+.chat-msg.missed-word,
+.missed-word-content {
+  background: linear-gradient(90deg, rgba(231, 76, 60, 0.4), rgba(192, 57, 43, 0.2));
+  border: 2px solid #e74c3c;
+  border-radius: 10px;
+  padding: 0.55rem 0.75rem;
+  color: #ffd4d0;
+}
+
+.missed-word-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.word-reveal-missed {
+  display: inline-block;
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(135deg, #c0392b, #e74c3c);
+  padding: 0.35rem 1rem;
+  border-radius: 10px;
+  box-shadow: 0 0 16px rgba(231, 76, 60, 0.55);
+  animation: missedPop 0.45s ease;
+}
+
+.word-reveal-normal {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--accent);
+  text-transform: capitalize;
+}
+
+.word-select-overlay.round-missed {
+  background: rgba(52, 18, 18, 0.94);
+}
+
+.round-end-label {
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+@keyframes missedPop {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.5;
+  }
+  60% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes correctPop {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.invite-card {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.invite-block {
+  margin-bottom: 1.25rem;
+}
+
+.invite-block:last-child {
+  margin-bottom: 0;
+}
+
+.invite-value-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.room-code-display {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.35em;
+  color: var(--warning);
+  background: var(--panel-light);
+  padding: 0.5rem 1.25rem;
+  border-radius: 10px;
+  font-family: monospace;
+}
+
+.invite-link-input {
+  flex: 1;
+  min-width: 200px;
+  font-size: 0.9rem;
 }
 
 .chat-msg.system {

@@ -14,6 +14,7 @@ interface Props {
   timeLeft: number;
   round: number;
   totalRounds: number;
+  roundWasGuessed: boolean;
   wordOptions: string[] | null;
   currentWord: string | null;
   strokes: Stroke[];
@@ -33,6 +34,7 @@ interface Props {
   onStrokeMove: (x: number, y: number, strokeId: number) => void;
   onStrokeEnd: () => void;
   onGuess: (text: string) => void;
+  roomCode?: string;
   leaderboard?: Player[];
   winnerName?: string;
   onBackHome: () => void;
@@ -49,6 +51,7 @@ export function GamePage({
   timeLeft,
   round,
   totalRounds,
+  roundWasGuessed,
   wordOptions,
   currentWord,
   strokes,
@@ -68,6 +71,7 @@ export function GamePage({
   onStrokeMove,
   onStrokeEnd,
   onGuess,
+  roomCode,
   leaderboard,
   winnerName,
   onBackHome,
@@ -100,6 +104,11 @@ export function GamePage({
     <div className="app">
       <div className="game-header">
         <div>
+          {roomCode && (
+            <span style={{ color: 'var(--warning)', fontWeight: 800, marginRight: 12 }}>
+              Room: {roomCode}
+            </span>
+          )}
           <span style={{ color: 'var(--muted)' }}>Round {round}/{totalRounds}</span>
           {drawerId && (
             <p style={{ fontWeight: 700 }}>
@@ -137,10 +146,13 @@ export function GamePage({
                 ))}
               </div>
             )}
-            {phase === 'round_end' && (
-              <div className="word-select-overlay">
-                <h3>Round over!</h3>
-                {currentWord && <p>The word was: <strong>{currentWord}</strong></p>}
+            {phase === 'round_end' && currentWord && (
+              <div className={`word-select-overlay ${roundWasGuessed ? '' : 'round-missed'}`}>
+                <h3>{roundWasGuessed ? 'Round over!' : "Time's up — nobody guessed!"}</h3>
+                <p className="round-end-label">The word was:</p>
+                <span className={roundWasGuessed ? 'word-reveal-normal' : 'word-reveal-missed'}>
+                  {currentWord}
+                </span>
               </div>
             )}
           </div>
@@ -178,6 +190,7 @@ export function GamePage({
             messages={messages}
             disabled={chatDisabled}
             placeholder={isDrawer ? 'Chat (guessers only)' : 'Type your guess...'}
+            myId={myId}
             onSend={onGuess}
           />
         </div>

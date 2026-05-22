@@ -28,7 +28,12 @@ export interface ChatMessage {
   playerName: string;
   text: string;
   isGuess: boolean;
+  isCorrect?: boolean;
+  points?: number;
   system?: boolean;
+  /** Shown in red when nobody guessed the word */
+  wordMissed?: boolean;
+  revealedWord?: string;
 }
 
 export interface GameState {

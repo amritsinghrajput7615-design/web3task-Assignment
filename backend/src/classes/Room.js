@@ -1,10 +1,13 @@
 const { Player } = require('./Player');
 const { Game } = require('./Game');
+const { MessageHandler } = require('../handlers/MessageHandler');
 
 class Room {
   constructor(roomId, hostId, hostName, settings, io) {
     this.roomId = roomId;
     this.hostId = hostId;
+    this.hostName = hostName;
+    this.invitePath = `?room=${roomId}`;
     this.settings = {
       maxPlayers: settings?.maxPlayers ?? 8,
       rounds: settings?.rounds ?? 3,
@@ -22,6 +25,17 @@ class Room {
     this.players.set(hostId, host);
 
     this.game = new Game(this, io);
+    this.messageHandler = new MessageHandler(this);
+  }
+
+  getInvitePayload(clientOrigin = '') {
+    const base = (clientOrigin || '').replace(/\/$/, '');
+    const inviteLink = base ? `${base}${this.invitePath}` : this.invitePath;
+    return {
+      roomCode: this.roomId,
+      inviteLink,
+      invitePath: this.invitePath,
+    };
   }
 
   hasPlayer(socketId) {
@@ -44,6 +58,7 @@ class Room {
     if (wasHost) {
       const next = this.getPlayerList()[0];
       this.hostId = next.id;
+      this.hostName = next.name;
     }
 
     if (this.drawerIndex >= this.players.size) {

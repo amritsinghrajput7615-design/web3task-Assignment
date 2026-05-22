@@ -17,17 +17,46 @@ A full-stack multiplayer drawing and guessing game built with **React + TypeScri
 - **Scoring & leaderboard** — Points based on time remaining; winner at game end
 - **Drawing tools** — Brush colors, size, eraser, undo, clear
 - **Hints** — Letters revealed over time
-- **Chat / guesses** — Wrong guesses appear in chat; correct guess ends the round
+- **Chat / guesses** — Wrong guesses in chat; **correct guesses highlighted in green** with points
+- **Room code + invite link** — Both shown in lobby with copy buttons
+- **MongoDB** — Game history & leaderboard only (not live room state)
+- **Missed word reveal** — Red highlight when time runs out and nobody guessed
 
 ## Architecture
 
 ```
-┌─────────────┐     WebSocket (Socket.IO)     ┌──────────────────────────────┐
-│   React UI  │ ◄──────────────────────────► │  Express + Socket.IO Server   │
-│  Canvas +   │   draw_*, guess, chat,       │  Room → Game → Player (OOP)   │
-│  Lobby      │   game_state, round_*        │  In-memory room store         │
-└─────────────┘                               └──────────────────────────────┘
+┌─────────────┐     WebSocket (Socket.IO)     ┌────────────────────────────────────────┐
+│   React UI  │ ◄──────────────────────────► │  Express + Socket.IO (in-memory rooms)  │
+│  Canvas +   │   draw_*, guess, chat        │  OOP: Room, Game, Player, MessageHandler│
+│  Lobby      │   round_end (wasGuessed)     │  GameHistoryService → MongoDB           │
+└─────────────┘                               └────────────────────────────────────────┘
 ```
+
+### OOP structure (backend)
+
+| Class | Role |
+|-------|------|
+| `Room` | Players, settings, host, broadcasts |
+| `Game` | Rounds, timer, scoring, word selection |
+| `Player` | Name, score, drawer/guesser state |
+| `MessageHandler` | Chat, correct/wrong guess messages |
+| `SocketHandlerRegistry` | Registers all socket events |
+| `GameHistoryService` | MongoDB: history + leaderboard persistence |
+| `WordService` | Random words from local JSON |
+
+### MongoDB `GameHistory` document
+
+| Field | Description |
+|-------|-------------|
+| `roomId` | Room code |
+| `hostName` | Host display name |
+| `players` | Final player list with scores |
+| `totalRounds` / `currentRound` | Round tracking |
+| `winner` | Winner id, name, score |
+| `leaderboard` | Ranked scores |
+| `wordsUsed` | Each round's word + `wasGuessed` |
+| `gameStartTime` / `gameEndTime` | Session timestamps |
+| `createdAt` | Auto (Mongoose timestamps) |
 
 ### Drawing sync
 
@@ -51,6 +80,25 @@ Guesses are trimmed and compared case-insensitively (`guess.trim().toLowerCase()
 ### Prerequisites
 
 - Node.js 18+
+- MongoDB (local or [MongoDB Atlas](https://www.mongodb.com/atlas) free tier)
+
+### MongoDB setup
+
+1. Copy `backend/.env.example` to `backend/.env`
+2. Set your connection string:
+
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017/skribbl-clone
+PORT=3001
+```
+
+3. Start MongoDB locally, or use Atlas and paste the Atlas URI.
+
+Live gameplay is always in-memory. MongoDB only stores completed game history when `MONGODB_URI` is set.
+
+**History API:**
+- `GET /api/history/room/:roomId` — past games for a room
+- `GET /api/history/recent` — recent completed games with leaderboards
 
 ### Install
 
