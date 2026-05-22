@@ -4,7 +4,7 @@ function registerDrawHandlers(socket) {
   socket.on('draw_start', ({ x, y, color, size }) => {
     const room = roomStore.getRoomBySocketId(socket.id);
     if (!room || room.game.currentDrawerId !== socket.id) return;
-    if (room.game.phase !== 'drawing') return;
+    if (room.game.phase !== 'drawing' || !room.game.roundActive) return;
 
     const stroke = {
       id: Date.now(),

@@ -27,12 +27,22 @@ class MessageHandler {
   }
 
   sendCorrectGuess(playerId, playerName, guessText, points) {
+    const word = this.room.game?.currentWord;
+
     this.broadcast('guess_result', {
       correct: true,
       playerId,
       playerName,
       points,
-      word: this.room.game?.currentWord,
+      word,
+    });
+
+    this.broadcast('correct_guess', {
+      playerId,
+      playerName,
+      guessText,
+      points,
+      word,
     });
 
     this.sendChat(playerId, playerName, guessText, {

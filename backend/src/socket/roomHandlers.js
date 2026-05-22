@@ -98,11 +98,7 @@ function registerRoomHandlers(io, socket) {
 
     if (wasDrawer && (gamePhase === 'drawing' || gamePhase === 'word_select')) {
       setImmediate(() => {
-        if (gamePhase === 'drawing') {
-          room.game.endRound(false);
-        } else {
-          room.game.skipWordSelection();
-        }
+        room.game.handleDrawerDisconnect();
       });
     }
   });
