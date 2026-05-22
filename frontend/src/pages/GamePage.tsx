@@ -12,6 +12,7 @@ interface Props {
   phase: string;
   hints: string;
   timeLeft: number;
+  wordSelectTimeLeft: number;
   round: number;
   totalRounds: number;
   roundWasGuessed: boolean;
@@ -24,9 +25,9 @@ interface Props {
   isEraser: boolean;
   canDraw: boolean;
   chatDisabled: boolean;
-  onColorChange: (c: string) => void;
+  onColorSelect: (c: string) => void;
   onSizeChange: (s: number) => void;
-  onEraserToggle: () => void;
+  onEraserSelect: () => void;
   onUndo: () => void;
   onClear: () => void;
   onWordChosen: (word: string) => void;
@@ -49,6 +50,7 @@ export function GamePage({
   phase,
   hints,
   timeLeft,
+  wordSelectTimeLeft,
   round,
   totalRounds,
   roundWasGuessed,
@@ -61,9 +63,9 @@ export function GamePage({
   isEraser,
   canDraw,
   chatDisabled,
-  onColorChange,
+  onColorSelect,
   onSizeChange,
-  onEraserToggle,
+  onEraserSelect,
   onUndo,
   onClear,
   onWordChosen,
@@ -110,16 +112,25 @@ export function GamePage({
             </span>
           )}
           <span style={{ color: 'var(--muted)' }}>Round {round}/{totalRounds}</span>
-          {drawerId && (
+          {drawerId && phase === 'word_select' && (
+            <p style={{ fontWeight: 700 }}>
+              {isDrawer ? 'Choose a word!' : `${drawerName} is choosing a word...`}
+            </p>
+          )}
+          {drawerId && phase === 'drawing' && (
             <p style={{ fontWeight: 700 }}>
               {isDrawer ? "You're drawing!" : `${drawerName} is drawing`}
             </p>
           )}
+          {phase === 'round_end' && <p style={{ fontWeight: 700 }}>Round over — next drawer soon...</p>}
         </div>
-        {isDrawer && currentWord && (
+        {isDrawer && currentWord && phase === 'drawing' && (
           <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent)' }}>{currentWord}</span>
         )}
         {!isDrawer && phase === 'drawing' && <span className="word-hint">{hints}</span>}
+        {phase === 'word_select' && (
+          <span className="timer word-select-timer">{wordSelectTimeLeft}s to choose</span>
+        )}
         {phase === 'drawing' && <span className="timer">{timeLeft}s</span>}
       </div>
 
@@ -138,7 +149,7 @@ export function GamePage({
             />
             {phase === 'word_select' && isDrawer && wordOptions && (
               <div className="word-select-overlay">
-                <h3>Choose a word to draw</h3>
+                <h3>Choose a word ({wordSelectTimeLeft}s)</h3>
                 {wordOptions.map((w) => (
                   <button key={w} type="button" className="word-option" onClick={() => onWordChosen(w)}>
                     {w}
@@ -162,9 +173,9 @@ export function GamePage({
             brushSize={brushSize}
             isEraser={isEraser}
             canEdit={isDrawer && canDraw}
-            onColorChange={onColorChange}
+            onColorSelect={onColorSelect}
             onSizeChange={onSizeChange}
-            onEraserToggle={onEraserToggle}
+            onEraserSelect={onEraserSelect}
             onUndo={onUndo}
             onClear={onClear}
           />

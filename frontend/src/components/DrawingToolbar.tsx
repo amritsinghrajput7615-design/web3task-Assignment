@@ -5,9 +5,9 @@ interface Props {
   brushSize: number;
   isEraser: boolean;
   canEdit: boolean;
-  onColorChange: (c: string) => void;
+  onColorSelect: (c: string) => void;
   onSizeChange: (s: number) => void;
-  onEraserToggle: () => void;
+  onEraserSelect: () => void;
   onUndo: () => void;
   onClear: () => void;
 }
@@ -17,9 +17,9 @@ export function DrawingToolbar({
   brushSize,
   isEraser,
   canEdit,
-  onColorChange,
+  onColorSelect,
   onSizeChange,
-  onEraserToggle,
+  onEraserSelect,
   onUndo,
   onClear,
 }: Props) {
@@ -33,7 +33,7 @@ export function DrawingToolbar({
           type="button"
           className={`color-btn ${color === c && !isEraser ? 'active' : ''}`}
           style={{ background: c }}
-          onClick={() => onColorChange(c)}
+          onClick={() => onColorSelect(c)}
           aria-label={`Color ${c}`}
         />
       ))}
@@ -46,7 +46,7 @@ export function DrawingToolbar({
         style={{ width: 100 }}
         title="Brush size"
       />
-      <button type="button" className={`tool-btn ${isEraser ? 'active' : ''}`} onClick={onEraserToggle}>
+      <button type="button" className={`tool-btn ${isEraser ? 'active' : ''}`} onClick={onEraserSelect}>
         Eraser
       </button>
       <button type="button" className="tool-btn" onClick={onUndo}>

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { database } = require('../config/database');
 const { GameHistory } = require('../models/GameHistory');
 
@@ -27,18 +28,28 @@ class GameHistoryService {
     }));
   }
 
+  _toObjectId(historyId) {
+    if (!historyId) return null;
+    if (mongoose.Types.ObjectId.isValid(historyId)) {
+      return new mongoose.Types.ObjectId(historyId);
+    }
+    return null;
+  }
+
   async startSession(room) {
-    if (!this._enabled()) return null;
+    if (!this._enabled()) {
+      console.warn('[GameHistoryService] Skipped startSession — DB not connected');
+      return null;
+    }
 
     try {
-      const host = room.getPlayerBySocketId(room.hostId) || room.getPlayerList()[0];
-      const hostName = host?.name || 'Host';
+      const hostName = room.hostName || room.getPlayerList()[0]?.name || 'Host';
 
       const doc = await GameHistory.create({
         roomId: room.roomId,
         hostName,
         players: this._mapPlayers(room.getPlayerList()),
-        totalRounds: room.game.totalRounds || room.settings.rounds * room.getPlayerList().length,
+        totalRounds: room.game.totalRounds,
         currentRound: 0,
         wordsUsed: [],
         gameStartTime: new Date(),
@@ -46,6 +57,7 @@ class GameHistoryService {
         status: 'in_progress',
       });
 
+      console.log(`[GameHistoryService] Created history ${doc._id} for room ${room.roomId}`);
       return doc._id.toString();
     } catch (error) {
       console.error('[GameHistoryService] startSession failed:', error.message);
@@ -59,9 +71,12 @@ class GameHistoryService {
     const { currentRound, word, wasGuessed, drawerName, players } = payload;
     if (!word) return;
 
+    const objectId = this._toObjectId(historyId);
+    if (!objectId) return;
+
     try {
-      await GameHistory.updateOne(
-        { _id: historyId },
+      const result = await GameHistory.updateOne(
+        { _id: objectId },
         {
           $set: {
             currentRound,
@@ -77,6 +92,10 @@ class GameHistoryService {
           },
         }
       );
+
+      if (result.matchedCount === 0) {
+        console.warn('[GameHistoryService] recordRound — document not found:', historyId);
+      }
     } catch (error) {
       console.error('[GameHistoryService] recordRound failed:', error.message);
     }
@@ -85,11 +104,14 @@ class GameHistoryService {
   async completeSession(historyId, payload) {
     if (!this._enabled() || !historyId) return null;
 
+    const objectId = this._toObjectId(historyId);
+    if (!objectId) return null;
+
     const { winner, leaderboard, currentRound, totalRounds } = payload;
 
     try {
       const doc = await GameHistory.findByIdAndUpdate(
-        historyId,
+        objectId,
         {
           $set: {
             currentRound,
@@ -110,6 +132,9 @@ class GameHistoryService {
         { new: true }
       ).lean();
 
+      if (doc) {
+        console.log(`[GameHistoryService] Completed history ${historyId}`);
+      }
       return doc;
     } catch (error) {
       console.error('[GameHistoryService] completeSession failed:', error.message);
@@ -120,9 +145,12 @@ class GameHistoryService {
   async abandonSession(historyId) {
     if (!this._enabled() || !historyId) return;
 
+    const objectId = this._toObjectId(historyId);
+    if (!objectId) return;
+
     try {
       await GameHistory.updateOne(
-        { _id: historyId, status: 'in_progress' },
+        { _id: objectId, status: 'in_progress' },
         {
           $set: {
             gameEndTime: new Date(),

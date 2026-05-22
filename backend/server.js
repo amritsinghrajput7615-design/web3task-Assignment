@@ -21,8 +21,8 @@ app.use(express.json());
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
-    database: database.isConnected(),
     persistence: 'game_history_only',
+    database: database.getStatus(),
   });
 });
 
@@ -67,9 +67,20 @@ async function start() {
   const PORT = process.env.PORT || 3001;
   server.listen(PORT, () => {
     console.log(`Skribbl server running on http://localhost:${PORT}`);
+    const status = database.getStatus();
     console.log(
-      `MongoDB: ${database.isConnected() ? 'connected (history + leaderboard)' : 'not configured'}`
+      `MongoDB: ${status.connected ? `connected → ${status.database}` : 'NOT connected — history will not save'}`
     );
+    if (status.lastError) console.log(`MongoDB last error: ${status.lastError}`);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. Stop the other server and restart.`);
+    } else {
+      console.error(err);
+    }
+    process.exit(1);
   });
 }
 

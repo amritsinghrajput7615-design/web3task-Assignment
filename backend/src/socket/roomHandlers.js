@@ -86,8 +86,12 @@ function registerRoomHandlers(io, socket) {
       return;
     }
 
-    if (room.game.currentDrawerId === socket.id && room.game.phase === 'drawing') {
-      room.game.endRound(false);
+    if (room.game.currentDrawerId === socket.id) {
+      if (room.game.phase === 'drawing') {
+        room.game.endRound(false);
+      } else if (room.game.phase === 'word_select') {
+        room.game.skipWordSelection();
+      }
     }
 
     room.broadcast('player_left', {

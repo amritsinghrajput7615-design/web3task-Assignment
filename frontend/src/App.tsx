@@ -29,6 +29,7 @@ export default function App() {
   const [currentWord, setCurrentWord] = useState<string | null>(null);
   const [hints, setHints] = useState('');
   const [timeLeft, setTimeLeft] = useState(0);
+  const [wordSelectTimeLeft, setWordSelectTimeLeft] = useState(0);
   const [round, setRound] = useState(0);
   const [totalRounds, setTotalRounds] = useState(0);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -111,26 +112,44 @@ export default function App() {
       setRound(data.round);
       setTotalRounds(data.totalRounds);
       setTimeLeft(data.drawTime);
+      setWordSelectTimeLeft(data.wordSelectTimeLeft ?? 10);
       setStrokes([]);
       setCurrentWord(null);
       setWordOptions(data.wordOptions ?? null);
       setHints(data.hints ?? '');
+      setIsEraser(false);
+
       if (data.isDrawer && data.wordOptions) {
-        addMessage({ playerId: '', playerName: '', text: 'Choose a word to draw!', isGuess: false, system: true });
+        addMessage({
+          playerId: '',
+          playerName: '',
+          text: `Choose a word to draw! (${data.wordSelectTimeLeft ?? 10}s)`,
+          isGuess: false,
+          system: true,
+        });
       } else {
         addMessage({
           playerId: '',
           playerName: '',
-          text: `${data.drawerName} is drawing...`,
+          text: `${data.drawerName} is choosing a word...`,
           isGuess: false,
           system: true,
         });
       }
     });
 
+    socket.on('word_select_timer', ({ timeLeft: t }: { timeLeft: number }) => {
+      setWordSelectTimeLeft(t);
+    });
+
+    socket.on('word_select_timeout', ({ message }: { message: string }) => {
+      addMessage({ playerId: '', playerName: '', text: message, isGuess: false, system: true });
+    });
+
     socket.on('word_chosen_ack', ({ word }: { word: string }) => {
       setCurrentWord(word);
       setPhase('drawing');
+      setIsEraser(false);
     });
 
     socket.on('game_state', (data: { phase?: string; hints?: string; timeLeft?: number; players?: Player[] }) => {
@@ -342,9 +361,13 @@ export default function App() {
       isEraser={isEraser}
       canDraw={phase === 'drawing'}
       chatDisabled={chatDisabled}
-      onColorChange={setColor}
+      wordSelectTimeLeft={wordSelectTimeLeft}
+      onColorSelect={(c) => {
+        setColor(c);
+        setIsEraser(false);
+      }}
       onSizeChange={setBrushSize}
-      onEraserToggle={() => setIsEraser((e) => !e)}
+      onEraserSelect={() => setIsEraser(true)}
       onUndo={handleUndo}
       onClear={handleClear}
       onWordChosen={chooseWord}
@@ -352,7 +375,6 @@ export default function App() {
       onStrokeMove={handleStrokeMove}
       onStrokeEnd={handleStrokeEnd}
       onGuess={handleGuess}
-      myId={myId}
       roomCode={roomCode}
       leaderboard={leaderboard}
       winnerName={winnerName}

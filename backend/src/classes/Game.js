@@ -2,6 +2,8 @@ const { checkGuess } = require('../utils/wordMatcher');
 const { wordService } = require('../services/WordService');
 const { gameHistoryService } = require('../services/GameHistoryService');
 
+const WORD_SELECT_SECONDS = 10;
+
 class Game {
   constructor(room, io) {
     this.room = room;
@@ -15,10 +17,32 @@ class Game {
     this.wordOptions = null;
     this.drawTime = room.settings.drawTime;
     this.timeLeft = 0;
-    this.timer = null;
+    this.wordSelectTimeLeft = WORD_SELECT_SECONDS;
+    this.drawTimer = null;
+    this.wordSelectTimer = null;
     this.strokeHistory = [];
     this.hintLevel = 0;
     this.historyId = null;
+    this.roundEnding = false;
+  }
+
+  clearDrawTimer() {
+    if (this.drawTimer) {
+      clearInterval(this.drawTimer);
+      this.drawTimer = null;
+    }
+  }
+
+  clearWordSelectTimer() {
+    if (this.wordSelectTimer) {
+      clearInterval(this.wordSelectTimer);
+      this.wordSelectTimer = null;
+    }
+  }
+
+  clearAllTimers() {
+    this.clearDrawTimer();
+    this.clearWordSelectTimer();
   }
 
   async startGame() {
@@ -26,6 +50,8 @@ class Game {
     this.totalRounds = playerCount * this.room.settings.rounds;
     this.currentRound = 0;
     this.phase = 'playing';
+    this.roundEnding = false;
+
     this.room.getPlayerList().forEach((p) => {
       p.score = 0;
       p.hasGuessed = false;
@@ -33,25 +59,25 @@ class Game {
     this.room.drawerIndex = 0;
 
     this.historyId = await gameHistoryService.startSession(this.room);
-    this.beginRound();
+    if (this.historyId) {
+      console.log(`[Game] History session ${this.historyId} for room ${this.room.roomId}`);
+    }
+
+    await this.setupTurn();
   }
 
-  async beginRound() {
+  async setupTurn() {
     if (this.currentRound >= this.totalRounds) {
-      this.endGame();
+      await this.endGame();
       return;
     }
 
-    this.currentRound += 1;
+    this.clearAllTimers();
     this.strokeHistory = [];
     this.hintLevel = 0;
     this.currentWord = null;
     this.wordOptions = null;
-
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+    this.roundEnding = false;
 
     const drawer = this.room.getNextDrawer();
     if (!drawer) return;
@@ -59,17 +85,20 @@ class Game {
     this.currentDrawerId = drawer.id;
     this.currentDrawerName = drawer.name;
     this.wordOptions = await wordService.pickRandom(this.room.settings.wordCount);
+    this.phase = 'word_select';
+    this.wordSelectTimeLeft = WORD_SELECT_SECONDS;
 
     this.room.getPlayerList().forEach((p) => {
       p.hasGuessed = false;
     });
 
     const payload = {
-      round: this.currentRound,
+      round: this.currentRound + 1,
       totalRounds: this.totalRounds,
       drawerId: drawer.id,
       drawerName: drawer.name,
       drawTime: this.drawTime,
+      wordSelectTimeLeft: this.wordSelectTimeLeft,
     };
 
     this.room.getPlayerList().forEach((p) => {
@@ -91,17 +120,51 @@ class Game {
 
     this.room.broadcast('game_state', {
       phase: 'word_select',
-      round: this.currentRound,
+      round: this.currentRound + 1,
       totalRounds: this.totalRounds,
       drawerId: drawer.id,
+      drawerName: drawer.name,
+      wordSelectTimeLeft: this.wordSelectTimeLeft,
       players: this.room.getPublicPlayers(),
     });
+
+    this.startWordSelectTimer();
+  }
+
+  startWordSelectTimer() {
+    this.clearWordSelectTimer();
+
+    this.wordSelectTimer = setInterval(() => {
+      this.wordSelectTimeLeft -= 1;
+      this.room.broadcast('word_select_timer', { timeLeft: this.wordSelectTimeLeft });
+
+      if (this.wordSelectTimeLeft <= 0) {
+        this.skipWordSelection();
+      }
+    }, 1000);
+  }
+
+  async skipWordSelection() {
+    if (this.phase !== 'word_select' || this.roundEnding) return;
+
+    this.clearWordSelectTimer();
+    const skippedName = this.currentDrawerName;
+
+    this.room.broadcast('word_select_timeout', {
+      drawerId: this.currentDrawerId,
+      drawerName: skippedName,
+      message: `${skippedName} didn't choose a word in time. Next player draws!`,
+    });
+
+    await this.setupTurn();
   }
 
   handleWordSelection(word, socketId) {
+    if (this.phase !== 'word_select') return false;
     if (socketId !== this.currentDrawerId) return false;
     if (!this.wordOptions?.includes(word)) return false;
 
+    this.clearWordSelectTimer();
     this.currentWord = word;
     this.phase = 'drawing';
     this.timeLeft = this.drawTime;
@@ -111,7 +174,7 @@ class Game {
 
     this.room.broadcast('game_state', {
       phase: 'drawing',
-      round: this.currentRound,
+      round: this.currentRound + 1,
       drawerId: this.currentDrawerId,
       hints: this.buildHintDisplay(this.currentWord),
       timeLeft: this.timeLeft,
@@ -120,14 +183,14 @@ class Game {
     this.room.broadcast('canvas_clear');
     this.strokeHistory = [];
 
-    this.startTimer();
+    this.startDrawTimer();
     return true;
   }
 
-  startTimer() {
-    if (this.timer) clearInterval(this.timer);
+  startDrawTimer() {
+    this.clearDrawTimer();
 
-    this.timer = setInterval(() => {
+    this.drawTimer = setInterval(() => {
       this.timeLeft -= 1;
       this.room.broadcast('timer', { timeLeft: this.timeLeft });
 
@@ -145,7 +208,6 @@ class Game {
 
     const elapsed = this.drawTime - this.timeLeft;
     const interval = Math.floor(this.drawTime / (maxHints + 1));
-
     const targetLevel = Math.min(maxHints, Math.floor(elapsed / interval));
 
     if (targetLevel > this.hintLevel) {
@@ -215,24 +277,24 @@ class Game {
   }
 
   async endRound(wasGuessed, guesserId = null) {
-    if (this.phase === 'round_end' || this.phase === 'lobby') return;
+    if (this.phase === 'round_end' || this.phase === 'lobby' || this.roundEnding) return;
 
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-
+    this.roundEnding = true;
+    this.clearAllTimers();
     this.phase = 'round_end';
 
     const word = this.currentWord;
+    this.currentRound += 1;
 
-    gameHistoryService.recordRound(this.historyId, {
-      currentRound: this.currentRound,
-      word,
-      wasGuessed,
-      drawerName: this.currentDrawerName,
-      players: this.room.getPlayerList(),
-    });
+    if (word) {
+      await gameHistoryService.recordRound(this.historyId, {
+        currentRound: this.currentRound,
+        word,
+        wasGuessed,
+        drawerName: this.currentDrawerName,
+        players: this.room.getPlayerList(),
+      });
+    }
 
     this.room.broadcast('round_end', {
       word,
@@ -241,33 +303,38 @@ class Game {
       scores: this.getLeaderboard(),
       round: this.currentRound,
       totalRounds: this.totalRounds,
+      nextDrawerIn: 5,
     });
 
-    setTimeout(() => {
+    setTimeout(async () => {
+      this.roundEnding = false;
       if (this.currentRound >= this.totalRounds) {
-        this.endGame();
+        await this.endGame();
       } else {
-        this.beginRound();
+        await this.setupTurn();
       }
     }, 5000);
   }
 
   async endGame() {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-
+    this.clearAllTimers();
     this.phase = 'ended';
+
     const leaderboard = this.getLeaderboard();
     const winner = leaderboard[0] || null;
 
-    await gameHistoryService.completeSession(this.historyId, {
+    const saved = await gameHistoryService.completeSession(this.historyId, {
       winner,
       leaderboard,
       currentRound: this.currentRound,
       totalRounds: this.totalRounds,
     });
+
+    if (saved) {
+      console.log(`[Game] History saved for room ${this.room.roomId}`);
+    } else if (this.historyId) {
+      console.warn(`[Game] Failed to save history for room ${this.room.roomId}`);
+    }
 
     this.historyId = null;
 

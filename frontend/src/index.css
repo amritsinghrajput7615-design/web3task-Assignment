@@ -190,6 +190,10 @@ label {
   color: var(--accent);
 }
 
+.word-select-timer {
+  color: var(--warning);
+}
+
 .canvas-wrap {
   position: relative;
   background: var(--canvas-bg);
