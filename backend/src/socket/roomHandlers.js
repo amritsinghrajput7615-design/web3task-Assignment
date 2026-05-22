@@ -86,13 +86,8 @@ function registerRoomHandlers(io, socket) {
       return;
     }
 
-    if (room.game.currentDrawerId === socket.id) {
-      if (room.game.phase === 'drawing') {
-        room.game.endRound(false);
-      } else if (room.game.phase === 'word_select') {
-        room.game.skipWordSelection();
-      }
-    }
+    const wasDrawer = room.game.currentDrawerId === socket.id;
+    const gamePhase = room.game.phase;
 
     room.broadcast('player_left', {
       playerId: socket.id,
@@ -100,6 +95,16 @@ function registerRoomHandlers(io, socket) {
       players: room.getPublicPlayers(),
       hostId: room.hostId,
     });
+
+    if (wasDrawer && (gamePhase === 'drawing' || gamePhase === 'word_select')) {
+      setImmediate(() => {
+        if (gamePhase === 'drawing') {
+          room.game.endRound(false);
+        } else {
+          room.game.skipWordSelection();
+        }
+      });
+    }
   });
 }
 

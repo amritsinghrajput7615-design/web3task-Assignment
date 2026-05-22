@@ -1,7 +1,7 @@
 import { DrawingCanvas } from '../components/DrawingCanvas';
 import { DrawingToolbar } from '../components/DrawingToolbar';
 import { ChatPanel } from '../components/ChatPanel';
-import type { ChatMessage, Player, Stroke } from '../types';
+import type { ChatMessage, DrawTool, Player, Stroke } from '../types';
 
 interface Props {
   myId: string;
@@ -16,17 +16,20 @@ interface Props {
   round: number;
   totalRounds: number;
   roundWasGuessed: boolean;
+  lastGuesserName: string | null;
+  transitionSeconds: number;
   wordOptions: string[] | null;
   currentWord: string | null;
   strokes: Stroke[];
   messages: ChatMessage[];
   color: string;
   brushSize: number;
-  isEraser: boolean;
+  activeTool: DrawTool;
   canDraw: boolean;
   chatDisabled: boolean;
   onColorSelect: (c: string) => void;
   onSizeChange: (s: number) => void;
+  onBrushSelect: () => void;
   onEraserSelect: () => void;
   onUndo: () => void;
   onClear: () => void;
@@ -54,17 +57,20 @@ export function GamePage({
   round,
   totalRounds,
   roundWasGuessed,
+  lastGuesserName,
+  transitionSeconds,
   wordOptions,
   currentWord,
   strokes,
   messages,
   color,
   brushSize,
-  isEraser,
+  activeTool,
   canDraw,
   chatDisabled,
   onColorSelect,
   onSizeChange,
+  onBrushSelect,
   onEraserSelect,
   onUndo,
   onClear,
@@ -78,6 +84,8 @@ export function GamePage({
   winnerName,
   onBackHome,
 }: Props) {
+  const strokeColor = activeTool === 'eraser' ? '#ffffff' : color;
+
   if (phase === 'ended' && leaderboard) {
     return (
       <div className="app">
@@ -122,7 +130,13 @@ export function GamePage({
               {isDrawer ? "You're drawing!" : `${drawerName} is drawing`}
             </p>
           )}
-          {phase === 'round_end' && <p style={{ fontWeight: 700 }}>Round over — next drawer soon...</p>}
+          {phase === 'round_end' && (
+            <p style={{ fontWeight: 700 }}>
+              {roundWasGuessed && lastGuesserName
+                ? `${lastGuesserName} guessed it!`
+                : 'Round over — next drawer soon...'}
+            </p>
+          )}
         </div>
         {isDrawer && currentWord && phase === 'drawing' && (
           <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent)' }}>{currentWord}</span>
@@ -141,7 +155,7 @@ export function GamePage({
               strokes={strokes}
               isDrawer={isDrawer}
               canDraw={canDraw}
-              color={isEraser ? '#ffffff' : color}
+              color={strokeColor}
               brushSize={brushSize}
               onStrokeStart={onStrokeStart}
               onStrokeMove={onStrokeMove}
@@ -158,12 +172,25 @@ export function GamePage({
               </div>
             )}
             {phase === 'round_end' && currentWord && (
-              <div className={`word-select-overlay ${roundWasGuessed ? '' : 'round-missed'}`}>
-                <h3>{roundWasGuessed ? 'Round over!' : "Time's up — nobody guessed!"}</h3>
-                <p className="round-end-label">The word was:</p>
-                <span className={roundWasGuessed ? 'word-reveal-normal' : 'word-reveal-missed'}>
-                  {currentWord}
-                </span>
+              <div
+                className={`word-select-overlay ${
+                  roundWasGuessed ? 'round-guessed' : 'round-missed'
+                }`}
+              >
+                {roundWasGuessed && lastGuesserName ? (
+                  <>
+                    <h3>{lastGuesserName} guessed correctly!</h3>
+                    <p className="round-end-label">The word was:</p>
+                    <span className="word-reveal-guessed">{currentWord}</span>
+                  </>
+                ) : (
+                  <>
+                    <h3>Time's up — nobody guessed!</h3>
+                    <p className="round-end-label">The word was:</p>
+                    <span className="word-reveal-missed">{currentWord}</span>
+                  </>
+                )}
+                <p className="transition-countdown">Next drawer in {transitionSeconds}s...</p>
               </div>
             )}
           </div>
@@ -171,10 +198,11 @@ export function GamePage({
           <DrawingToolbar
             color={color}
             brushSize={brushSize}
-            isEraser={isEraser}
+            activeTool={activeTool}
             canEdit={isDrawer && canDraw}
             onColorSelect={onColorSelect}
             onSizeChange={onSizeChange}
+            onBrushSelect={onBrushSelect}
             onEraserSelect={onEraserSelect}
             onUndo={onUndo}
             onClear={onClear}
@@ -189,7 +217,7 @@ export function GamePage({
                 <li key={p.id}>
                   <span>
                     {p.name}
-                    {p.id === drawerId && ' ✏️'}
+                    {p.id === drawerId && phase !== 'round_end' && ' ✏️'}
                     {p.hasGuessed && ' ✓'}
                   </span>
                   <span>{p.score}</span>

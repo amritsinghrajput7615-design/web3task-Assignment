@@ -4,7 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import { HomePage } from './pages/HomePage';
 import { LobbyPage } from './pages/LobbyPage';
 import { GamePage } from './pages/GamePage';
-import type { ChatMessage, Player, RoomSettings, Stroke } from './types';
+import type { ChatMessage, DrawTool, Player, RoomSettings, Stroke } from './types';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
 
@@ -36,10 +36,12 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [color, setColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(6);
-  const [isEraser, setIsEraser] = useState(false);
+  const [activeTool, setActiveTool] = useState<DrawTool>('brush');
   const [leaderboard, setLeaderboard] = useState<Player[] | undefined>();
   const [winnerName, setWinnerName] = useState<string | undefined>();
   const [roundWasGuessed, setRoundWasGuessed] = useState(true);
+  const [lastGuesserName, setLastGuesserName] = useState<string | null>(null);
+  const [transitionSeconds, setTransitionSeconds] = useState(4);
   const pendingJoin = useRef<{ roomId: string; playerName: string; clientOrigin: string } | null>(null);
 
   const addMessage = useCallback((msg: ChatMessage) => {
@@ -117,7 +119,8 @@ export default function App() {
       setCurrentWord(null);
       setWordOptions(data.wordOptions ?? null);
       setHints(data.hints ?? '');
-      setIsEraser(false);
+      setActiveTool('brush');
+      setLastGuesserName(null);
 
       if (data.isDrawer && data.wordOptions) {
         addMessage({
@@ -149,20 +152,57 @@ export default function App() {
     socket.on('word_chosen_ack', ({ word }: { word: string }) => {
       setCurrentWord(word);
       setPhase('drawing');
-      setIsEraser(false);
+      setActiveTool('brush');
     });
 
-    socket.on('game_state', (data: { phase?: string; hints?: string; timeLeft?: number; players?: Player[] }) => {
-      if (data.phase) setPhase(data.phase as Phase);
-      if (data.hints !== undefined) setHints(data.hints);
-      if (data.timeLeft !== undefined) setTimeLeft(data.timeLeft);
-      if (data.players) setPlayers(data.players);
-      if (data.phase === 'drawing') {
-        setStrokes([]);
+    socket.on(
+      'game_state',
+      (data: {
+        phase?: string;
+        hints?: string;
+        timeLeft?: number;
+        wordSelectTimeLeft?: number;
+        drawerId?: string;
+        drawerName?: string;
+        round?: number;
+        totalRounds?: number;
+        players?: Player[];
+      }) => {
+        if (data.phase) setPhase(data.phase as Phase);
+        if (data.hints !== undefined) setHints(data.hints);
+        if (data.timeLeft !== undefined) setTimeLeft(data.timeLeft);
+        if (data.wordSelectTimeLeft !== undefined) setWordSelectTimeLeft(data.wordSelectTimeLeft);
+        if (data.drawerId !== undefined) setDrawerId(data.drawerId);
+        if (data.round !== undefined) setRound(data.round);
+        if (data.totalRounds !== undefined) setTotalRounds(data.totalRounds);
+        if (data.players) setPlayers(data.players);
+        if (data.phase === 'drawing') setStrokes([]);
+        if (data.phase === 'round_end' || data.phase === 'word_select') {
+          setTimeLeft(0);
+        }
       }
+    );
+
+    socket.on('timer', ({ timeLeft: t }: { timeLeft: number }) => {
+      setTimeLeft(t);
     });
 
-    socket.on('timer', ({ timeLeft: t }: { timeLeft: number }) => setTimeLeft(t));
+    socket.on(
+      'round_guessed',
+      (data: {
+        wasGuessed: boolean;
+        guesserName?: string;
+        word?: string;
+        points?: number;
+      }) => {
+        setPhase('round_end');
+        setRoundWasGuessed(data.wasGuessed);
+        setTimeLeft(0);
+        setWordSelectTimeLeft(0);
+        if (data.word) setCurrentWord(data.word);
+        if (data.guesserName) setLastGuesserName(data.guesserName);
+      }
+    );
 
     socket.on('draw_data', (stroke: Stroke) => {
       setStrokes((prev) => [...prev, stroke]);
@@ -190,22 +230,34 @@ export default function App() {
 
     socket.on('chat_message', (msg: ChatMessage) => addMessage(msg));
 
-    socket.on('round_end', (data: { word: string; wasGuessed: boolean; scores: Player[] }) => {
+    socket.on(
+      'round_end',
+      (data: {
+        word: string;
+        wasGuessed: boolean;
+        guesserName?: string;
+        scores: Player[];
+        transitionSeconds?: number;
+      }) => {
       setPhase('round_end');
       setCurrentWord(data.word);
       setRoundWasGuessed(data.wasGuessed);
       setPlayers(data.scores);
+      setTimeLeft(0);
+      setWordSelectTimeLeft(0);
+      if (data.guesserName) setLastGuesserName(data.guesserName);
+      if (data.transitionSeconds) setTransitionSeconds(data.transitionSeconds);
 
       if (data.word) {
-        if (data.wasGuessed) {
+        if (data.wasGuessed && data.guesserName) {
           addMessage({
             playerId: '',
             playerName: '',
-            text: `Round over! The word was "${data.word}"`,
+            text: `${data.guesserName} guessed correctly! The word was "${data.word}"`,
             isGuess: false,
             system: true,
           });
-        } else {
+        } else if (!data.wasGuessed) {
           addMessage({
             playerId: '',
             playerName: '',
@@ -358,16 +410,19 @@ export default function App() {
       messages={messages}
       color={color}
       brushSize={brushSize}
-      isEraser={isEraser}
+      activeTool={activeTool}
       canDraw={phase === 'drawing'}
       chatDisabled={chatDisabled}
       wordSelectTimeLeft={wordSelectTimeLeft}
+      lastGuesserName={lastGuesserName}
+      transitionSeconds={transitionSeconds}
       onColorSelect={(c) => {
         setColor(c);
-        setIsEraser(false);
+        setActiveTool('brush');
       }}
       onSizeChange={setBrushSize}
-      onEraserSelect={() => setIsEraser(true)}
+      onBrushSelect={() => setActiveTool('brush')}
+      onEraserSelect={() => setActiveTool('eraser')}
       onUndo={handleUndo}
       onClear={handleClear}
       onWordChosen={chooseWord}

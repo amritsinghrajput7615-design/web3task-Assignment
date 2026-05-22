@@ -16,6 +16,8 @@ export interface Player {
   hasGuessed: boolean;
 }
 
+export type DrawTool = 'brush' | 'eraser';
+
 export interface Stroke {
   id: number;
   points: { x: number; y: number }[];

@@ -221,6 +221,13 @@ label {
   align-items: center;
 }
 
+.toolbar-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--panel-light);
+  margin: 0 0.25rem;
+}
+
 .color-btn {
   width: 32px;
   height: 32px;
@@ -358,6 +365,29 @@ label {
 
 .word-select-overlay.round-missed {
   background: rgba(52, 18, 18, 0.94);
+}
+
+.word-select-overlay.round-guessed {
+  background: rgba(18, 52, 38, 0.94);
+}
+
+.word-reveal-guessed {
+  display: inline-block;
+  font-size: 1.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(135deg, #27ae60, #2ecc71);
+  padding: 0.35rem 1rem;
+  border-radius: 10px;
+  box-shadow: 0 0 16px rgba(46, 204, 113, 0.5);
+  animation: correctPop 0.45s ease;
+}
+
+.transition-countdown {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin-top: 0.75rem;
 }
 
 .round-end-label {
