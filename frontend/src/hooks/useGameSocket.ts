@@ -2,7 +2,10 @@ import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { ChatMessage, DrawTool, Player, RoomSettings, Stroke } from '../types';
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
+/** Empty = same origin; Vite proxies /socket.io → backend in dev */
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || undefined;
+
+export const ACTIVE_ROOM_KEY = 'activeRoomId';
 
 export type GamePhase = 'home' | 'lobby' | 'word_select' | 'drawing' | 'round_end' | 'ended';
 
@@ -69,36 +72,46 @@ export function useGameSocket(
   }>,
   addMessage: (msg: ChatMessage) => void,
   roomCodeFromUrl: string | null,
-  pendingJoin: React.MutableRefObject<{ roomId: string; playerName: string; clientOrigin: string } | null>
+  pendingJoin: React.MutableRefObject<{ roomId: string; playerName: string; clientOrigin: string } | null>,
+  onExitedRoom?: (message?: string) => void
 ) {
   const socketRef = useRef<Socket | null>(null);
+  const settersRef = useRef(setters);
+  const addMessageRef = useRef(addMessage);
+  const onExitedRoomRef = useRef(onExitedRoom);
+  const roomCodeRef = useRef(roomCodeFromUrl);
+
+  settersRef.current = setters;
+  addMessageRef.current = addMessage;
+  onExitedRoomRef.current = onExitedRoom;
+  roomCodeRef.current = roomCodeFromUrl;
 
   const clientOrigin = () =>
     `${window.location.origin}${window.location.pathname}`.replace(/\/$/, '');
 
   const applyGameState = (data: Record<string, unknown>) => {
-    // ✅ Never let game_state override round_end — onRoundEnd owns that phase entirely
     if (data.phase === 'round_end') return;
 
-    if (data.phase) setters.setPhase?.(data.phase as GamePhase);
-    if (data.hints !== undefined) setters.setHints?.(data.hints as string);
-    if (data.timeLeft !== undefined) setters.setTimeLeft?.(data.timeLeft as number);
+    const st = settersRef.current;
+    if (data.phase) st.setPhase?.(data.phase as GamePhase);
+    if (data.hints !== undefined) st.setHints?.(data.hints as string);
+    if (data.timeLeft !== undefined) st.setTimeLeft?.(data.timeLeft as number);
     if (data.wordSelectTimeLeft !== undefined) {
-      setters.setWordSelectTimeLeft?.(data.wordSelectTimeLeft as number);
+      st.setWordSelectTimeLeft?.(data.wordSelectTimeLeft as number);
     }
-    if (data.drawerId !== undefined) setters.setDrawerId?.(data.drawerId as string);
-    if (data.round !== undefined) setters.setRound?.(data.round as number);
-    if (data.totalRounds !== undefined) setters.setTotalRounds?.(data.totalRounds as number);
-    if (data.players) setters.setPlayers?.(data.players as Player[]);
-    if (data.wordChoices) setters.setWordOptions?.(data.wordChoices as string[]);
+    if (data.drawerId !== undefined) st.setDrawerId?.(data.drawerId as string);
+    if (data.round !== undefined) st.setRound?.(data.round as number);
+    if (data.totalRounds !== undefined) st.setTotalRounds?.(data.totalRounds as number);
+    if (data.players) st.setPlayers?.(data.players as Player[]);
+    if (data.wordChoices) st.setWordOptions?.(data.wordChoices as string[]);
     if (data.phase === 'drawing') {
-      setters.setStrokes?.([]);
-      if (data.timeLeft !== undefined) setters.setTimeLeft?.(data.timeLeft as number);
+      st.setStrokes?.([]);
+      if (data.timeLeft !== undefined) st.setTimeLeft?.(data.timeLeft as number);
     }
     if (data.phase === 'word_select') {
-      setters.setTimeLeft?.(0);
+      st.setTimeLeft?.(0);
       if (data.wordSelectTimeLeft !== undefined) {
-        setters.setWordSelectTimeLeft?.(data.wordSelectTimeLeft as number);
+        st.setWordSelectTimeLeft?.(data.wordSelectTimeLeft as number);
       }
     }
   };
@@ -110,41 +123,65 @@ export function useGameSocket(
     transitionSeconds?: number;
     scores: Player[];
   }) => {
+    const st = settersRef.current;
     const guessed = Boolean(data.wasGuessed);
-    setters.setRoundWasGuessed?.(guessed);
-    if (data.guesserName) setters.setLastGuesserName?.(data.guesserName);
-    if (data.transitionSeconds) setters.setTransitionSeconds?.(data.transitionSeconds);
-    setters.setCurrentWord?.(data.word);
-    setters.setPlayers?.(data.scores);
-    setters.setTimeLeft?.(0);
-    setters.setWordSelectTimeLeft?.(0);
-    setters.setPhase?.('round_end');
+    st.setRoundWasGuessed?.(guessed);
+    if (data.guesserName) st.setLastGuesserName?.(data.guesserName);
+    if (data.transitionSeconds) st.setTransitionSeconds?.(data.transitionSeconds);
+    st.setCurrentWord?.(data.word);
+    st.setPlayers?.(data.scores);
+    st.setTimeLeft?.(0);
+    st.setWordSelectTimeLeft?.(0);
+    st.setPhase?.('round_end');
   };
 
   useEffect(() => {
-    const socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
+    if (socketRef.current) return;
+
+    const socket = io(SERVER_URL, {
+      path: '/socket.io',
+      transports: ['polling', 'websocket'],
+      reconnection: true,
+      reconnectionAttempts: 8,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+    });
     socketRef.current = socket;
 
+    const getSetters = () => settersRef.current;
+
     socket.on('connect', () => {
-      setters.setConnected?.(true);
-      setters.setMyId?.(socket.id!);
+      getSetters().setConnected?.(true);
+      getSetters().setError?.('');
+      getSetters().setMyId?.(socket.id!);
       if (pendingJoin.current) {
         socket.emit('join_room', pendingJoin.current);
         pendingJoin.current = null;
-      } else if (roomCodeFromUrl) {
-        const savedName = sessionStorage.getItem('playerName');
-        if (savedName) {
-          socket.emit('join_room', {
-            roomId: roomCodeFromUrl.toUpperCase(),
-            playerName: savedName,
-            clientOrigin: clientOrigin(),
-          });
-        }
       }
     });
 
-    socket.on('disconnect', () => setters.setConnected?.(false));
-    socket.on('error', ({ message }: { message: string }) => setters.setError?.(message));
+    socket.on('reconnect', () => {
+      const activeRoom = sessionStorage.getItem(ACTIVE_ROOM_KEY);
+      const savedName = sessionStorage.getItem('playerName');
+      if (activeRoom && savedName) {
+        socket.emit('join_room', {
+          roomId: activeRoom,
+          playerName: savedName,
+          clientOrigin: clientOrigin(),
+        });
+      }
+    });
+
+    socket.on('disconnect', () => getSetters().setConnected?.(false));
+
+    socket.on('connect_error', () => {
+      getSetters().setConnected?.(false);
+      getSetters().setError?.(
+        'Cannot reach game server. Start the backend on port 3001, then refresh.'
+      );
+    });
+
+    socket.on('error', ({ message }: { message: string }) => getSetters().setError?.(message));
 
     const applyRoom = (data: {
       roomId: string;
@@ -154,33 +191,82 @@ export function useGameSocket(
       settings: RoomSettings;
       players: Player[];
     }) => {
-      setters.setError?.('');
-      setters.setRoomId?.(data.roomId);
-      setters.setRoomCode?.(data.roomCode || data.roomId);
-      setters.setInviteLink?.(
+      const st = getSetters();
+      st.setError?.('');
+      st.setRoomId?.(data.roomId);
+      st.setRoomCode?.(data.roomCode || data.roomId);
+      st.setInviteLink?.(
         data.inviteLink ||
           `${window.location.origin}${window.location.pathname}?room=${data.roomId}`
       );
-      setters.setHostId?.(data.hostId);
-      setters.setSettings?.(data.settings);
-      setters.setPlayers?.(data.players);
-      setters.setPhase?.('lobby');
+      st.setHostId?.(data.hostId);
+      st.setSettings?.(data.settings);
+      st.setPlayers?.(data.players);
+      st.setPhase?.('lobby');
+      sessionStorage.setItem(ACTIVE_ROOM_KEY, data.roomId);
       window.history.replaceState({}, '', `?room=${data.roomId}`);
     };
 
     socket.on('room_created', applyRoom);
     socket.on('room_joined', applyRoom);
 
-    socket.on('player_joined', ({ players: p }: { players: Player[] }) =>
-      setters.setPlayers?.(p)
+    socket.on(
+      'player_joined',
+      ({ players: p, hostId: joinedHostId }: { players: Player[]; hostId?: string }) => {
+        getSetters().setPlayers?.(p);
+        if (joinedHostId) getSetters().setHostId?.(joinedHostId);
+      }
     );
 
-    socket.on('player_left', ({ players: p, playerName: leftName }: { players: Player[]; playerName?: string }) => {
-      setters.setPlayers?.(p);
-      if (leftName) {
-        addMessage({ playerId: '', playerName: '', text: `${leftName} left the room`, isGuess: false, isCorrect: false, points: 0, system: true });
+    const exitToHome = (message?: string) => {
+      sessionStorage.removeItem(ACTIVE_ROOM_KEY);
+      const st = getSetters();
+      st.setPhase?.('home');
+      st.setRoomId?.('');
+      st.setRoomCode?.('');
+      st.setInviteLink?.('');
+      st.setPlayers?.([]);
+      st.setSettings?.(null);
+      st.setHostId?.('');
+      if (message) st.setError?.(message);
+      window.history.replaceState({}, '', '/');
+      onExitedRoomRef.current?.(message);
+    };
+
+    socket.on('room_left', () => exitToHome());
+    socket.on('kicked', ({ message }: { message?: string }) => exitToHome(message));
+    socket.on('banned', ({ message }: { message?: string }) => exitToHome(message));
+
+    socket.on(
+      'player_left',
+      ({
+        players: p,
+        playerName: leftName,
+        hostId: newHostId,
+        reason,
+      }: {
+        players: Player[];
+        playerName?: string;
+        hostId?: string;
+        reason?: string;
+      }) => {
+        getSetters().setPlayers?.(p);
+        if (newHostId) getSetters().setHostId?.(newHostId);
+        if (!leftName) return;
+        let text = `${leftName} left the room`;
+        if (reason === 'kicked') text = `${leftName} was kicked from the room`;
+        if (reason === 'banned') text = `${leftName} was banned from the room`;
+        addMessageRef.current({
+          playerId: '',
+          playerName: '',
+          text,
+          isGuess: false,
+          isCorrect: false,
+          points: 0,
+          system: true,
+        });
       }
-    });
+    );
 
     const onTurnStart = (data: {
       drawerId: string;
@@ -195,63 +281,67 @@ export function useGameSocket(
       hints?: string;
     }) => {
       // ✅ Reset roundWasGuessed when a new turn starts
-      setters.setRoundWasGuessed?.(false);
-      setters.setLastGuesserName?.(null);
-      setters.setPhase?.('word_select');
-      setters.setDrawerId?.(data.drawerId);
-      setters.setRound?.(data.round);
-      setters.setTotalRounds?.(data.totalRounds);
-      setters.setTimeLeft?.(0);
-      setters.setWordSelectTimeLeft?.(data.wordSelectTimeLeft ?? 10);
-      setters.setStrokes?.([]);
-      setters.setCurrentWord?.(null);
-      setters.setWordOptions?.(data.wordOptions ?? data.wordChoices ?? null);
-      setters.setHints?.(data.hints ?? '');
-      setters.setActiveTool?.('brush');
+      const st = getSetters();
+      st.setRoundWasGuessed?.(false);
+      st.setLastGuesserName?.(null);
+      st.setPhase?.('word_select');
+      st.setDrawerId?.(data.drawerId);
+      st.setRound?.(data.round);
+      st.setTotalRounds?.(data.totalRounds);
+      st.setTimeLeft?.(0);
+      st.setWordSelectTimeLeft?.(data.wordSelectTimeLeft ?? 10);
+      st.setStrokes?.([]);
+      st.setCurrentWord?.(null);
+      st.setWordOptions?.(data.wordOptions ?? data.wordChoices ?? null);
+      st.setHints?.(data.hints ?? '');
+      st.setActiveTool?.('brush');
 
       if (data.isDrawer && (data.wordOptions || data.wordChoices)) {
-        addMessage({ playerId: '', playerName: '', text: `Choose a word to draw! (${data.wordSelectTimeLeft ?? 10}s)`, isGuess: false, isCorrect: false, points: 0, system: true });
+        addMessageRef.current({ playerId: '', playerName: '', text: `Choose a word to draw! (${data.wordSelectTimeLeft ?? 10}s)`, isGuess: false, isCorrect: false, points: 0, system: true });
       } else {
-        addMessage({ playerId: '', playerName: '', text: `${data.drawerName} is choosing a word...`, isGuess: false, isCorrect: false, points: 0, system: true });
+        addMessageRef.current({ playerId: '', playerName: '', text: `${data.drawerName} is choosing a word...`, isGuess: false, isCorrect: false, points: 0, system: true });
       }
     };
 
     socket.on('round_start', onTurnStart);
 
     socket.on('word_select_timer', (data: { timeLeft: number }) => {
-      setters.setWordSelectTimeLeft?.(data.timeLeft);
+      getSetters().setWordSelectTimeLeft?.(data.timeLeft);
     });
 
     socket.on('selectionTimerUpdate', (data: { timeLeft: number }) => {
-      setters.setWordSelectTimeLeft?.(data.timeLeft);
+      getSetters().setWordSelectTimeLeft?.(data.timeLeft);
     });
 
     socket.on('word_selection_started', (data: { wordSelectTimeLeft?: number; drawerId?: string }) => {
-      setters.setPhase?.('word_select');
-      setters.setWordSelectTimeLeft?.(data.wordSelectTimeLeft ?? 10);
-      setters.setTimeLeft?.(0);
-      if (data.drawerId) setters.setDrawerId?.(data.drawerId);
+      const st = getSetters();
+      st.setPhase?.('word_select');
+      st.setWordSelectTimeLeft?.(data.wordSelectTimeLeft ?? 10);
+      st.setTimeLeft?.(0);
+      if (data.drawerId) st.setDrawerId?.(data.drawerId);
     });
 
     socket.on('timer_update', (data: { timeLeft?: number; wordSelectTimeLeft?: number; phase?: string }) => {
+      const st = getSetters();
       if (data.phase === 'word_select') {
-        setters.setWordSelectTimeLeft?.(data.wordSelectTimeLeft ?? data.timeLeft ?? 0);
-        setters.setTimeLeft?.(0);
+        st.setWordSelectTimeLeft?.(data.wordSelectTimeLeft ?? data.timeLeft ?? 0);
+        st.setTimeLeft?.(0);
         return;
       }
       if (data.phase === 'drawing') {
-        setters.setTimeLeft?.(data.timeLeft ?? 0);
+        st.setTimeLeft?.(data.timeLeft ?? 0);
       }
     });
 
     socket.on('word_select_timeout', ({ message }: { message: string }) => {
-      addMessage({ playerId: '', playerName: '', text: message, isGuess: false, isCorrect: false, points: 0, system: true });
+      addMessageRef.current({ playerId: '', playerName: '', text: message, isGuess: false, isCorrect: false, points: 0, system: true });
     });
 
     const onWordChosen = ({ word }: { word: string }) => {
-      setters.setCurrentWord?.(word);
-      setters.setPhase?.('drawing');
-      setters.setActiveTool?.('brush');
+      const st = getSetters();
+      st.setCurrentWord?.(word);
+      st.setPhase?.('drawing');
+      st.setActiveTool?.('brush');
     };
     socket.on('word_chosen_ack', onWordChosen);
     socket.on('word_selected', onWordChosen);
@@ -260,12 +350,12 @@ export function useGameSocket(
 
     socket.on('timer', ({ timeLeft: t, phase }: { timeLeft: number; phase?: string }) => {
       if (phase === 'drawing' || phase === undefined) {
-        setters.setTimeLeft?.(t);
+        getSetters().setTimeLeft?.(t);
       }
     });
 
     socket.on('roundTimerUpdate', (data: { timeLeft: number }) => {
-      setters.setTimeLeft?.(data.timeLeft);
+      getSetters().setTimeLeft?.(data.timeLeft);
     });
 
     const onCorrectGuess = (data: {
@@ -274,21 +364,22 @@ export function useGameSocket(
       wasGuessed?: boolean;
       word?: string;
     }) => {
-      setters.setRoundWasGuessed?.(true);
-      setters.setTimeLeft?.(0);
-      setters.setWordSelectTimeLeft?.(0);
+      const st = getSetters();
+      st.setRoundWasGuessed?.(true);
+      st.setTimeLeft?.(0);
+      st.setWordSelectTimeLeft?.(0);
       const name = data.guesserName ?? data.playerName;
-      if (name) setters.setLastGuesserName?.(name);
+      if (name) st.setLastGuesserName?.(name);
     };
     socket.on('round_guessed', onCorrectGuess);
     socket.on('correct_guess', onCorrectGuess);
 
     socket.on('draw_data', (stroke: Stroke) => {
-      setters.setStrokes?.((prev) => [...prev, stroke]);
+      getSetters().setStrokes?.((prev) => [...prev, stroke]);
     });
 
     socket.on('draw_move', ({ x, y, strokeId }: { x: number; y: number; strokeId: number }) => {
-      setters.setStrokes?.((prev) => {
+      getSetters().setStrokes?.((prev) => {
         const copy = [...prev];
         const stroke = copy.find((s) => s.id === strokeId);
         if (stroke) stroke.points.push({ x, y });
@@ -296,11 +387,12 @@ export function useGameSocket(
       });
     });
 
-    socket.on('canvas_clear', () => setters.setStrokes?.([]));
+    socket.on('canvas_clear', () => getSetters().setStrokes?.([]));
 
     socket.on('draw_undo', ({ strokes: s }: { strokes?: Stroke[] }) => {
-      if (s) setters.setStrokes?.(s);
-      else setters.setStrokes?.((prev) => prev.slice(0, -1));
+      const st = getSetters();
+      if (s) st.setStrokes?.(s);
+      else st.setStrokes?.((prev) => prev.slice(0, -1));
     });
 
     // ✅ guess_result — word is masked on backend, nothing to do here
@@ -309,20 +401,24 @@ export function useGameSocket(
     });
 
     // ✅ chat_message — maskedWord field used by ChatPanel, msg.text never shown for correct guesses
-    socket.on('chat_message', (msg: ChatMessage) => addMessage(msg));
+    socket.on('chat_message', (msg: ChatMessage) => addMessageRef.current(msg));
 
     socket.on('round_end', onRoundEnd);
 
     socket.on('game_over', (data: { winner: Player | null; leaderboard: Player[] }) => {
-      setters.setPhase?.('ended');
-      setters.setLeaderboard?.(data.leaderboard);
-      setters.setPlayers?.(data.leaderboard);
-      setters.setWinnerName?.(data.winner?.name);
+      const st = getSetters();
+      st.setPhase?.('ended');
+      st.setLeaderboard?.(data.leaderboard);
+      st.setPlayers?.(data.leaderboard);
+      st.setWinnerName?.(data.winner?.name);
     });
 
-    return () => { socket.disconnect(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addMessage, roomCodeFromUrl]);
+    return () => {
+      socket.removeAllListeners();
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, []);
 
   return socketRef;
 }

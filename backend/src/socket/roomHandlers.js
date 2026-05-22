@@ -1,4 +1,5 @@
 const { roomStore } = require('../store/roomStore');
+const { removeMemberFromRoom } = require('./roomMembership');
 
 function generateRoomId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -41,10 +42,24 @@ function registerRoomHandlers(io, socket) {
       return;
     }
 
+    if (room.isBanned(playerName)) {
+      socket.emit('error', { message: 'You are banned from this room' });
+      return;
+    }
+
+    const normalizedName = room.normalizePlayerName(playerName);
+    for (const p of [...room.getPlayerList()]) {
+      if (room.normalizePlayerName(p.name) === normalizedName && p.id !== socket.id) {
+        removeMemberFromRoom(io, room, p.id, { reason: 'replaced' });
+      }
+    }
+
     if (!room.addPlayer(socket.id, playerName)) {
       socket.emit('error', { message: 'Room is full' });
       return;
     }
+
+    room.reclaimHost(socket.id, playerName);
 
     socket.join(room.roomId);
 
@@ -53,6 +68,7 @@ function registerRoomHandlers(io, socket) {
     room.broadcast('player_joined', {
       player: payload.player,
       players: payload.players,
+      hostId: room.hostId,
       roomCode: payload.roomCode,
       inviteLink: payload.inviteLink,
     });
@@ -72,35 +88,63 @@ function registerRoomHandlers(io, socket) {
     room.game.startGame();
   });
 
+  socket.on('leave_room', () => {
+    const room = roomStore.getRoomBySocketId(socket.id);
+    if (!room) return;
+    removeMemberFromRoom(io, room, socket.id, { reason: 'left' });
+  });
+
+  socket.on('kick_player', ({ targetId }) => {
+    const room = roomStore.getRoomBySocketId(socket.id);
+    if (!room) {
+      socket.emit('error', { message: 'You are not in a room' });
+      return;
+    }
+    if (!room.isHost(socket.id)) {
+      socket.emit('error', { message: 'Only the host can kick players' });
+      return;
+    }
+    if (!targetId || targetId === socket.id) {
+      socket.emit('error', { message: 'Cannot kick yourself' });
+      return;
+    }
+    if (!room.hasPlayer(targetId)) {
+      socket.emit('error', { message: 'Player not found in room' });
+      return;
+    }
+    const ok = removeMemberFromRoom(io, room, targetId, { reason: 'kicked', byHost: true });
+    if (!ok) {
+      socket.emit('error', { message: 'Failed to kick player' });
+    }
+  });
+
+  socket.on('ban_player', ({ targetId }) => {
+    const room = roomStore.getRoomBySocketId(socket.id);
+    if (!room) {
+      socket.emit('error', { message: 'You are not in a room' });
+      return;
+    }
+    if (!room.isHost(socket.id)) {
+      socket.emit('error', { message: 'Only the host can ban players' });
+      return;
+    }
+    if (!targetId || targetId === socket.id) {
+      socket.emit('error', { message: 'Cannot ban yourself' });
+      return;
+    }
+    const target = room.getPlayerBySocketId(targetId);
+    if (!target) {
+      socket.emit('error', { message: 'Player not found' });
+      return;
+    }
+    room.banPlayerName(target.name);
+    removeMemberFromRoom(io, room, targetId, { reason: 'banned', byHost: true });
+  });
+
   socket.on('disconnect', () => {
     const room = roomStore.getRoomBySocketId(socket.id);
     if (!room) return;
-
-    const leavingPlayer = room.getPlayerBySocketId(socket.id);
-    const result = room.removePlayer(socket.id);
-    socket.leave(room.roomId);
-
-    if (result.empty) {
-      room.game.abandonHistory();
-      roomStore.deleteRoom(room.roomId);
-      return;
-    }
-
-    const wasDrawer = room.game.currentDrawerId === socket.id;
-    const gamePhase = room.game.phase;
-
-    room.broadcast('player_left', {
-      playerId: socket.id,
-      playerName: leavingPlayer?.name,
-      players: room.getPublicPlayers(),
-      hostId: room.hostId,
-    });
-
-    if (wasDrawer && (gamePhase === 'drawing' || gamePhase === 'word_select')) {
-      setImmediate(() => {
-        room.game.handleDrawerDisconnect();
-      });
-    }
+    removeMemberFromRoom(io, room, socket.id, { reason: 'disconnect' });
   });
 }
 

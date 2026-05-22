@@ -1,13 +1,14 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
 import { LobbyPage } from './pages/LobbyPage';
 import { GamePage } from './pages/GamePage';
-import { useGameSocket, type GamePhase } from './hooks/useGameSocket';
+import { useGameSocket, ACTIVE_ROOM_KEY, type GamePhase } from './hooks/useGameSocket';
 import type { ChatMessage, DrawTool, Player, RoomSettings, Stroke } from './types';
 
 export default function App() {
   const [searchParams] = useSearchParams();
+  const [inviteRoomCode] = useState(() => searchParams.get('room'));
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [phase, setPhase] = useState<GamePhase>('home');
@@ -43,9 +44,10 @@ export default function App() {
     setMessages((prev) => [...prev.slice(-100), msg]);
   }, []);
 
-  const socketRef = useGameSocket(
-    {} as never,
-    {
+  const handleExitedRoom = useCallback(() => setError(''), []);
+
+  const socketSetters = useMemo(
+    () => ({
       setConnected,
       setError,
       setPhase,
@@ -71,11 +73,72 @@ export default function App() {
       setRoundWasGuessed,
       setLastGuesserName,
       setTransitionSeconds,
-    },
+    }),
+    []
+  );
+
+  const socketRef = useGameSocket(
+    {} as never,
+    socketSetters,
     addMessage,
     searchParams.get('room'),
-    pendingJoin
+    pendingJoin,
+    handleExitedRoom
   );
+
+  const resetHome = useCallback(() => {
+    sessionStorage.removeItem(ACTIVE_ROOM_KEY);
+    setPhase('home');
+    setRoomId('');
+    setRoomCode('');
+    setInviteLink('');
+    setHostId('');
+    setSettings(null);
+    setPlayers([]);
+    setMessages([]);
+    setStrokes([]);
+    setLeaderboard(undefined);
+    setDrawerId(null);
+    window.history.replaceState({}, '', '/');
+  }, []);
+
+  const leaveRoom = useCallback(() => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('leave_room');
+    }
+    resetHome();
+  }, [resetHome]);
+
+  const kickPlayer = useCallback(
+    (targetId: string) => {
+      if (!socketRef.current?.connected) {
+        setError('Not connected to server');
+        return;
+      }
+      setError('');
+      socketRef.current.emit('kick_player', { targetId });
+    },
+    []
+  );
+
+  const banPlayer = useCallback(
+    (targetId: string) => {
+      if (!socketRef.current?.connected) {
+        setError('Not connected to server');
+        return;
+      }
+      setError('');
+      socketRef.current.emit('ban_player', { targetId });
+    },
+    []
+  );
+
+  useEffect(() => {
+    sessionStorage.removeItem(ACTIVE_ROOM_KEY);
+    if (inviteRoomCode) {
+      window.history.replaceState({}, '', '/');
+    }
+  }, [inviteRoomCode]);
 
   const clientOrigin = () =>
     `${window.location.origin}${window.location.pathname}`.replace(/\/$/, '');
@@ -132,18 +195,6 @@ export default function App() {
   };
   const handleGuess = (text: string) => socketRef.current?.emit('guess', { text });
 
-  const resetHome = () => {
-    setPhase('home');
-    setRoomId('');
-    setRoomCode('');
-    setInviteLink('');
-    setPlayers([]);
-    setMessages([]);
-    setStrokes([]);
-    setLeaderboard(undefined);
-    window.history.replaceState({}, '', '/');
-  };
-
   const isDrawer = myId === drawerId;
   const drawerName = players.find((p) => p.id === drawerId)?.name ?? 'Someone';
   const myPlayer = players.find((p) => p.id === myId);
@@ -154,7 +205,15 @@ export default function App() {
     phase === 'word_select';
 
   if (phase === 'home') {
-    return <HomePage connected={connected} error={error} onCreate={createRoom} onJoin={joinRoom} />;
+    return (
+      <HomePage
+        connected={connected}
+        error={error}
+        initialRoomCode={inviteRoomCode}
+        onCreate={createRoom}
+        onJoin={joinRoom}
+      />
+    );
   }
 
   if (phase === 'lobby' && settings) {
@@ -167,9 +226,13 @@ export default function App() {
         myId={myId}
         players={players}
         settings={settings}
+        error={error}
         onStart={startGame}
         onCopyLink={copyLink}
         onCopyCode={copyCode}
+        onLeave={leaveRoom}
+        onKick={kickPlayer}
+        onBan={banPlayer}
       />
     );
   }
@@ -217,6 +280,7 @@ export default function App() {
       leaderboard={leaderboard}
       winnerName={winnerName}
       onBackHome={resetHome}
+      onLeaveRoom={leaveRoom}
     />
   );
 }

@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { RoomSettings } from '../types';
 
 interface Props {
   connected: boolean;
   error: string;
+  initialRoomCode?: string | null;
   onCreate: (name: string, settings: RoomSettings) => void;
   onJoin: (roomId: string, name: string) => void;
 }
@@ -18,11 +19,18 @@ const defaultSettings: RoomSettings = {
   isPrivate: false,
 };
 
-export function HomePage({ connected, error, onCreate, onJoin }: Props) {
-  const [tab, setTab] = useState<'create' | 'join'>('create');
-  const [name, setName] = useState('');
-  const [roomCode, setRoomCode] = useState('');
+export function HomePage({ connected, error, initialRoomCode, onCreate, onJoin }: Props) {
+  const [tab, setTab] = useState<'create' | 'join'>(initialRoomCode ? 'join' : 'create');
+  const [name, setName] = useState(() => sessionStorage.getItem('playerName') ?? '');
+  const [roomCode, setRoomCode] = useState(initialRoomCode?.toUpperCase() ?? '');
   const [settings, setSettings] = useState<RoomSettings>(defaultSettings);
+
+  useEffect(() => {
+    if (initialRoomCode) {
+      setTab('join');
+      setRoomCode(initialRoomCode.toUpperCase());
+    }
+  }, [initialRoomCode]);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();

@@ -42,6 +42,7 @@ interface Props {
   leaderboard?: Player[];
   winnerName?: string;
   onBackHome: () => void;
+  onLeaveRoom?: () => void;
 }
 
 export function GamePage({
@@ -83,6 +84,7 @@ export function GamePage({
   leaderboard,
   winnerName,
   onBackHome,
+  onLeaveRoom,
 }: Props) {
   const strokeColor = activeTool === 'eraser' ? '#ffffff' : color;
 
@@ -113,7 +115,7 @@ export function GamePage({
   return (
     <div className="app">
       <div className="game-header">
-        <div>
+        <div className="game-header-main">
           {roomCode && (
             <span style={{ color: 'var(--warning)', fontWeight: 800, marginRight: 12 }}>
               Room: {roomCode}
@@ -138,6 +140,7 @@ export function GamePage({
             </p>
           )}
         </div>
+        <div className="game-header-right">
         {isDrawer && currentWord && phase === 'drawing' && (
           <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent)' }}>{currentWord}</span>
         )}
@@ -146,6 +149,12 @@ export function GamePage({
           <span className="timer word-select-timer">{wordSelectTimeLeft}s to choose</span>
         )}
         {phase === 'drawing' && <span className="timer">{timeLeft}s</span>}
+        {onLeaveRoom && (
+          <button type="button" className="btn-leave-room btn-leave-room--compact" onClick={onLeaveRoom}>
+            Leave
+          </button>
+        )}
+        </div>
       </div>
 
       <div className="game-layout">

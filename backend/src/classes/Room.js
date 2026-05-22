@@ -18,6 +18,7 @@ class Room {
       isPrivate: settings?.isPrivate ?? false,
     };
     this.players = new Map();
+    this.bannedNames = new Set();
     this.io = io;
     this.drawerIndex = 0;
 
@@ -42,7 +43,34 @@ class Room {
     return this.players.has(socketId);
   }
 
+  isHost(socketId) {
+    return this.hostId === socketId;
+  }
+
+  /** Restore host role when the named host rejoins with a new socket (e.g. after refresh). */
+  reclaimHost(socketId, playerName) {
+    if (this.normalizePlayerName(playerName) === this.normalizePlayerName(this.hostName)) {
+      this.hostId = socketId;
+      return true;
+    }
+    return false;
+  }
+
+  normalizePlayerName(name) {
+    return (name || '').trim().toLowerCase();
+  }
+
+  isBanned(playerName) {
+    return this.bannedNames.has(this.normalizePlayerName(playerName));
+  }
+
+  banPlayerName(playerName) {
+    const key = this.normalizePlayerName(playerName);
+    if (key) this.bannedNames.add(key);
+  }
+
   addPlayer(socketId, name) {
+    if (this.isBanned(name)) return false;
     if (this.players.size >= this.settings.maxPlayers) return false;
     const player = new Player(socketId, name, socketId);
     this.players.set(socketId, player);
