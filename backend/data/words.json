@@ -1,0 +1,8 @@
+{
+  "animals": ["cat", "dog", "elephant", "giraffe", "penguin", "dolphin", "rabbit", "tiger", "lion", "monkey", "horse", "sheep", "cow", "pig", "chicken", "duck", "owl", "bear", "wolf", "fox"],
+  "objects": ["house", "car", "phone", "computer", "book", "chair", "table", "lamp", "clock", "camera", "bicycle", "umbrella", "glasses", "key", "door", "window", "bed", "pillow", "cup", "bottle"],
+  "food": ["apple", "banana", "pizza", "burger", "cake", "cookie", "bread", "cheese", "egg", "fish", "rice", "soup", "salad", "ice cream", "chocolate", "candy", "orange", "grape", "watermelon", "strawberry"],
+  "actions": ["running", "jumping", "swimming", "dancing", "singing", "reading", "writing", "cooking", "sleeping", "fishing", "climbing", "flying", "driving", "painting", "drawing", "laughing", "crying", "eating", "drinking", "walking"],
+  "nature": ["sun", "moon", "star", "cloud", "rain", "snow", "tree", "flower", "mountain", "river", "ocean", "beach", "forest", "grass", "leaf", "rock", "sand", "wind", "storm", "rainbow"],
+  "sports": ["football", "basketball", "tennis", "golf", "baseball", "soccer", "hockey", "volleyball", "swimming", "boxing", "skiing", "surfing", "cycling", "running", "yoga", "gym", "medal", "trophy", "stadium", "referee"]
+}

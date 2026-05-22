@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: skribbl-clone
+    env: node
+    buildCommand: npm run install:all && npm run build --prefix frontend
+    startCommand: node backend/server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 20

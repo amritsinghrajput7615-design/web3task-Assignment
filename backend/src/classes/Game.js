@@ -1,204 +1,284 @@
-import { Server } from 'socket.io';
-import { Room } from './Room.js';
-import { checkGuess } from '../utils/wordMatcher.js';
+const { checkGuess } = require('../utils/wordMatcher');
 
-export class Game {
-  static wordBank: String[] = [];
+let wordBank = [];
 
-  roomId: string;
-  io: Server;
-  settings: any;
-  room: Room;
-  
-  rounds: number;
-  currentRound: number;
-  drawTime: number;
-  wordCount: number;
+function setWordBank(words) {
+  wordBank = words;
+}
 
-  currentDrawerId: string | null;
-  currentWord: string | null;
-  wordOptions: string[] | null;
+function pickRandomWords(count) {
+  const pool = [...wordBank];
+  const picked = [];
+  while (picked.length < count && pool.length > 0) {
+    const idx = Math.floor(Math.random() * pool.length);
+    picked.push(pool.splice(idx, 1)[0]);
+  }
+  return picked;
+}
 
-  timer: NodeJS.Timeout | null;
-  timeLeft: number;
-  
-  isDrawingPhase: boolean;
-
-  constructor(roomId: string, io: Server, settings: any, room: Room) {
-    this.roomId = roomId;
-    this.io = io;
-    this.settings = settings;
+class Game {
+  constructor(room, io) {
     this.room = room;
-    
-    this.rounds = settings.rounds || 3;
-    this.currentRound = 1;
-    this.drawTime = settings.drawTime || 60;
-    this.wordCount = settings.wordCount || 3;
-    
+    this.io = io;
+    this.phase = 'lobby';
+    this.currentRound = 0;
+    this.totalRounds = 0;
     this.currentDrawerId = null;
     this.currentWord = null;
     this.wordOptions = null;
+    this.drawTime = room.settings.drawTime;
     this.timeLeft = 0;
-    this.isDrawingPhase = false;
+    this.timer = null;
+    this.strokeHistory = [];
+    this.hintLevel = 0;
   }
 
-  startRound(drawerId: string) {
-    this.currentDrawerId = drawerId;
-    this.isDrawingPhase = true;
-    this.wordOptions = [];
+  startGame() {
+    const playerCount = this.room.getPlayerList().length;
+    this.totalRounds = playerCount * this.room.settings.rounds;
+    this.currentRound = 0;
+    this.phase = 'playing';
+    this.room.getPlayerList().forEach((p) => {
+      p.score = 0;
+      p.hasGuessed = false;
+    });
+    this.room.drawerIndex = 0;
+    this.beginRound();
+  }
 
-    const players = this.room.getPlayerList();
-    players.forEach(p => p.hasGuessed = false);
-
-    // Generate 3 random words from bank OR custom option
-    const shuffled = [...Game.wordBank].sort(() => 0.5 - Math.random());
-    this.wordOptions = shuffled.slice(0, this.wordCount);
-
-    // Notify Drawer
-    const drawer = players.find(p => p.id === drawerId);
-    if (drawer) {
-      this.io.to(drawer.socketId).emit('round_start', {
-        drawerId: this.currentDrawerId,
-        wordOptions: this.wordOptions,
-        drawTime: this.drawTime,
-      });
+  beginRound() {
+    if (this.currentRound >= this.totalRounds) {
+      this.endGame();
+      return;
     }
 
-    // Notify Guessers
-    const guessers = players.filter(p => p.id !== drawerId);
-    guessers.forEach(p => {
-      this.io.to(p.socketId).emit('round_start', {
-        drawerId: this.currentDrawerId,
-        wordOptions: null,
-        drawTime: this.drawTime,
-        hints: this.generateHints('', 0)
-      });
+    this.currentRound += 1;
+    this.strokeHistory = [];
+    this.hintLevel = 0;
+    this.currentWord = null;
+    this.wordOptions = null;
+
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+
+    const drawer = this.room.getNextDrawer();
+    if (!drawer) return;
+
+    this.currentDrawerId = drawer.id;
+    this.wordOptions = pickRandomWords(this.room.settings.wordCount);
+
+    this.room.getPlayerList().forEach((p) => {
+      p.hasGuessed = false;
+    });
+
+    const payload = {
+      round: this.currentRound,
+      totalRounds: this.totalRounds,
+      drawerId: drawer.id,
+      drawerName: drawer.name,
+      drawTime: this.drawTime,
+    };
+
+    this.room.getPlayerList().forEach((p) => {
+      if (p.id === drawer.id) {
+        this.io.to(p.socketId).emit('round_start', {
+          ...payload,
+          wordOptions: this.wordOptions,
+          isDrawer: true,
+        });
+      } else {
+        this.io.to(p.socketId).emit('round_start', {
+          ...payload,
+          wordOptions: null,
+          isDrawer: false,
+          hints: this.buildHintDisplay(''),
+        });
+      }
+    });
+
+    this.room.broadcast('game_state', {
+      phase: 'word_select',
+      round: this.currentRound,
+      totalRounds: this.totalRounds,
+      drawerId: drawer.id,
+      players: this.room.getPublicPlayers(),
     });
   }
 
-  handleWordSelection(word: string) {
+  handleWordSelection(word, socketId) {
+    if (socketId !== this.currentDrawerId) return false;
+    if (!this.wordOptions?.includes(word)) return false;
+
     this.currentWord = word;
-    this.isDrawingPhase = true;
-    
-    this.io.to(this.roomId).emit('game_state', {
+    this.phase = 'drawing';
+    this.timeLeft = this.drawTime;
+    this.hintLevel = 0;
+
+    this.io.to(this.currentDrawerId).emit('word_chosen_ack', { word });
+
+    this.room.broadcast('game_state', {
       phase: 'drawing',
       round: this.currentRound,
       drawerId: this.currentDrawerId,
-      hints: this.generateHints(word, 0),
+      hints: this.buildHintDisplay(this.currentWord),
+      timeLeft: this.timeLeft,
     });
 
+    this.room.broadcast('canvas_clear');
+    this.strokeHistory = [];
+
     this.startTimer();
+    return true;
   }
 
-  handleGuess(playerId: string, playerName: string, text: string) {
-    if (!this.currentWord || !this.isDrawingPhase) return { correct: false };
-    if (playerId === this.currentDrawerId) return { correct: false };
+  startTimer() {
+    if (this.timer) clearInterval(this.timer);
 
-    const player = this.room.getPlayerList().find(p => p.id === playerId);
-    if (!player || player.hasGuessed) return { correct: false };
-
-    if (checkGuess(text, this.currentWord)) {
-      player.hasGuessed = true;
-      const points = this.calculatePoints();
-      player.score += points;
-
-      // Bonus for drawer
-      const drawer = this.room.getPlayerList().find(p => p.id === this.currentDrawerId);
-      if (drawer) drawer.score += 50;
-
-      this.io.to(this.roomId).emit('guess_result', {
-        correct: true,
-        playerId,
-        playerName,
-        points,
-      });
-
-      this.endRound(true, playerId);
-      return { correct: true, points };
-    }
-
-    // Wrong guess
-    return { correct: false };
-  }
-
-  private calculatePoints() {
-    const ratio = this.timeLeft / this.drawTime;
-    return Math.max(50, Math.round(500 * ratio));
-  }
-
-  private startTimer() {
-    this.timeLeft = this.drawTime;
-    
     this.timer = setInterval(() => {
-      this.timeLeft--;
-      
-      this.io.to(this.roomId).emit('timer', { time: this.timeLeft });
+      this.timeLeft -= 1;
+      this.room.broadcast('timer', { timeLeft: this.timeLeft });
 
-      // Handle Hints
-      const hints = this.generateHintsForTime();
-      if (hints) {
-        this.io.to(this.roomId).emit('game_state', { hints });
-      }
+      this.maybeRevealHint();
 
-      // End round if time runs out
       if (this.timeLeft <= 0) {
         this.endRound(false);
       }
     }, 1000);
   }
 
-  private generateHintsForTime() {
-    if (!this.currentWord) return null;
-    if (this.timeLeft === Math.floor(this.drawTime * 0.66)) {
-      return this.generateHints(this.currentWord, 1);
+  maybeRevealHint() {
+    const maxHints = this.room.settings.hints;
+    if (maxHints <= 0 || !this.currentWord) return;
+
+    const elapsed = this.drawTime - this.timeLeft;
+    const interval = Math.floor(this.drawTime / (maxHints + 1));
+
+    const targetLevel = Math.min(
+      maxHints,
+      Math.floor(elapsed / interval)
+    );
+
+    if (targetLevel > this.hintLevel) {
+      this.hintLevel = targetLevel;
+      this.room.broadcast('game_state', {
+        hints: this.buildHintDisplay(this.currentWord),
+      });
     }
-    if (this.timeLeft === Math.floor(this.drawTime * 0.33)) {
-      return this.generateHints(this.currentWord, 2);
-    }
-    return null;
   }
 
-  private generateHints(word: string, reveal: number): string {
-    if (!word) return '_ '.repeat(8); // default blank
-    
-    return word.split('').map((char, i) => {
-      if (i < reveal) return char;
-      return '_';
-    }).join(' ');
+  buildHintDisplay(word) {
+    if (!word) return '_ '.repeat(5).trim();
+    const revealCount = this.hintLevel;
+    return word
+      .split('')
+      .map((char, i) => {
+        if (char === ' ') return ' ';
+        if (i < revealCount) return char;
+        return '_';
+      })
+      .join(' ');
   }
 
-  endRound(wasGuessed: boolean, guesserId?: string) {
-    if (this.timer) clearInterval(this.timer);
-    this.isDrawingPhase = false;
+  handleGuess(playerId, playerName, text) {
+    if (this.phase !== 'drawing' || !this.currentWord) {
+      return { correct: false, broadcast: true };
+    }
+    if (playerId === this.currentDrawerId) {
+      return { correct: false, broadcast: false };
+    }
 
-    this.io.to(this.roomId).emit('round_end', {
+    const player = this.room.getPlayerList().find((p) => p.id === playerId);
+    if (!player || player.hasGuessed) {
+      return { correct: false, broadcast: false };
+    }
+
+    if (!checkGuess(text, this.currentWord)) {
+      return { correct: false, broadcast: true };
+    }
+
+    player.hasGuessed = true;
+    const points = this.calculatePoints();
+    player.score += points;
+
+    const drawer = this.room.getPlayerList().find((p) => p.id === this.currentDrawerId);
+    if (drawer) drawer.score += Math.round(points * 0.25);
+
+    this.room.broadcast('guess_result', {
+      correct: true,
+      playerId,
+      playerName,
+      points,
+      word: this.currentWord,
+    });
+
+    this.room.broadcast('game_state', {
+      players: this.room.getPublicPlayers(),
+    });
+
+    const guessers = this.room.getPlayerList().filter((p) => p.id !== this.currentDrawerId);
+    const allGuessed = guessers.length > 0 && guessers.every((p) => p.hasGuessed);
+
+    if (allGuessed) {
+      this.endRound(true, playerId);
+    }
+
+    return { correct: true, broadcast: false };
+  }
+
+  calculatePoints() {
+    const ratio = this.timeLeft / this.drawTime;
+    return Math.max(50, Math.round(500 * ratio));
+  }
+
+  endRound(wasGuessed, guesserId = null) {
+    if (this.phase === 'round_end' || this.phase === 'lobby') return;
+
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+
+    this.phase = 'round_end';
+
+    this.room.broadcast('round_end', {
       word: this.currentWord,
       wasGuessed,
       guesserId,
-      scores: this.getScores(),
+      scores: this.getLeaderboard(),
+      round: this.currentRound,
+      totalRounds: this.totalRounds,
     });
 
-    // Schedule next round
     setTimeout(() => {
-      this.nextRoundLogic();
+      if (this.currentRound >= this.totalRounds) {
+        this.endGame();
+      } else {
+        this.beginRound();
+      }
     }, 5000);
   }
 
-  private getScores() {
-    return this.room.getPublicPlayers().sort((a, b) => b.score - a.score);
-  }
-
-  private nextRoundLogic() {
-    if (this.currentRound >= this.rounds && !this.isDrawingPhase) {
-      // Game Over
-      const leaderboard = this.getScores();
-      this.io.to(this.roomId).emit('game_over', { leaderboard });
-      return;
+  endGame() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
     }
 
-    // Rotate
-    const nextDrawer = this.room.nextDrawer();
-    this.currentRound++;
-    this.startRound(nextDrawer.id);
+    this.phase = 'ended';
+    const leaderboard = this.getLeaderboard();
+    const winner = leaderboard[0] || null;
+
+    this.room.broadcast('game_over', {
+      winner,
+      leaderboard,
+    });
+  }
+
+  getLeaderboard() {
+    return [...this.room.getPublicPlayers()].sort((a, b) => b.score - a.score);
   }
 }
+
+module.exports = { Game, setWordBank };

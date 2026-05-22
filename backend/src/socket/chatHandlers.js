@@ -1,7 +1,6 @@
-import { Socket } from 'socket.io';
-import { roomStore } from '../store/roomStore.js';
+const { roomStore } = require('../store/roomStore');
 
-export default function chatHandlers(socket: Socket) {
+function registerChatHandlers(socket) {
   socket.on('guess', ({ text }) => {
     const room = roomStore.getRoomBySocketId(socket.id);
     if (!room) return;
@@ -9,15 +8,13 @@ export default function chatHandlers(socket: Socket) {
     const player = room.getPlayerBySocketId(socket.id);
     if (!player) return;
 
-    // Handled in Game class
     const result = room.game.handleGuess(player.id, player.name, text);
-    
-    if (!result.correct) {
-      // Broadcast as chat message
-      room.io.to(room.roomId).emit('chat_message', {
+
+    if (!result.correct && result.broadcast) {
+      room.broadcast('chat_message', {
         playerId: player.id,
         playerName: player.name,
-        text: text,
+        text,
         isGuess: true,
       });
     }
@@ -30,11 +27,17 @@ export default function chatHandlers(socket: Socket) {
     const player = room.getPlayerBySocketId(socket.id);
     if (!player) return;
 
-    room.io.to(room.roomId).emit('chat_message', {
+    if (room.game.phase === 'drawing' && player.id !== room.game.currentDrawerId) {
+      return;
+    }
+
+    room.broadcast('chat_message', {
       playerId: player.id,
       playerName: player.name,
-      text: text,
+      text,
       isGuess: false,
     });
   });
 }
+
+module.exports = { registerChatHandlers };

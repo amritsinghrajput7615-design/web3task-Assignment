@@ -1,35 +1,37 @@
-import { Room } from '../classes/Room.js';
-import { Server } from 'socket.io';
+const { Room } = require('../classes/Room');
 
 class RoomStore {
-  io: Server | null = null;
-  private rooms: Map<string, Room> = new Map();
+  constructor() {
+    this.io = null;
+    this.rooms = new Map();
+  }
 
-  setIO(io: Server) {
+  setIO(io) {
     this.io = io;
   }
 
-  createRoom(roomId: string, hostId: string, hostName: string, settings: any) {
-    if (!this.io) throw new Error("IO not set");
+  createRoom(roomId, hostId, hostName, settings) {
     const room = new Room(roomId, hostId, hostName, settings, this.io);
     this.rooms.set(roomId, room);
     return room;
   }
 
-  getRoom(roomId: string) {
-    return this.rooms.get(roomId);
+  getRoom(roomId) {
+    return this.rooms.get(roomId?.toUpperCase());
   }
 
-  getRoomBySocketId(socketId: string) {
+  getRoomBySocketId(socketId) {
     for (const room of this.rooms.values()) {
       if (room.hasPlayer(socketId)) return room;
     }
     return null;
   }
 
-  deleteRoom(roomId: string) {
+  deleteRoom(roomId) {
     this.rooms.delete(roomId);
   }
 }
 
-export const roomStore = new RoomStore();
+const roomStore = new RoomStore();
+
+module.exports = { roomStore };

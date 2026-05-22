@@ -1,12 +1,5 @@
-export class Player {
-  id: string;
-  name: string;
-  score: number;
-  hasGuessed: boolean;
-  isDrawer: boolean;
-  socketId: string;
-
-  constructor(id: string, name: string, socketId: string) {
+class Player {
+  constructor(id, name, socketId) {
     this.id = id;
     this.name = name;
     this.socketId = socketId;
@@ -15,3 +8,5 @@ export class Player {
     this.isDrawer = false;
   }
 }
+
+module.exports = { Player };

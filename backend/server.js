@@ -1,46 +1,55 @@
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
-const connectDB = require('./config/db');
-const roomHandler = require('./socket/handlers');
 const path = require('path');
+const cors = require('cors');
+const { Server } = require('socket.io');
+const wordsData = require('./data/words.json');
+const { setWordBank } = require('./src/classes/Game');
+const { roomStore } = require('./src/store/roomStore');
+const { registerRoomHandlers } = require('./src/socket/roomHandlers');
+const { registerGameHandlers } = require('./src/socket/gameHandlers');
+const { registerDrawHandlers } = require('./src/socket/drawHandlers');
+const { registerChatHandlers } = require('./src/socket/chatHandlers');
 
-// Load words
-const words = require('./data/words.json');
+const allWords = Object.values(wordsData).flat();
+setWordBank(allWords);
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Route for getting words (optional)
-app.get('/api/words', (req, res) => {
-  res.json(words);
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true });
+});
+
+app.get('/api/words/categories', (_req, res) => {
+  res.json(Object.keys(wordsData));
+});
+
+const clientDist = path.join(__dirname, '../frontend/dist');
+app.use(express.static(clientDist));
+app.get(/^\/(?!api).*/, (_req, res) => {
+  res.sendFile(path.join(clientDist, 'index.html'));
 });
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*", // In production, replace with client URL
-    methods: ["GET", "POST"]
-  }
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
 });
 
-// Connect to MongoDB
-connectDB();
+roomStore.setIO(io);
 
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-  
-  // Pass dependencies to handler
-  roomHandler(io, socket, words);
-
-  socket.on('disconnect', () => {
-    console.log('Client disconnected');
-  });
+  registerRoomHandlers(io, socket);
+  registerGameHandlers(socket);
+  registerDrawHandlers(socket);
+  registerChatHandlers(socket);
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Skribbl server running on http://localhost:${PORT}`);
 });
