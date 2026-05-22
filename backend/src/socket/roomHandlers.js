@@ -78,7 +78,7 @@ function registerRoomHandlers(io, socket) {
 
   socket.on('start_game', () => {
     const room = roomStore.getRoomBySocketId(socket.id);
-    if (!room || room.hostId !== socket.id) return;
+    if (!room || !room.isHost(socket.id)) return;
 
     if (room.getPlayerList().length < 2) {
       socket.emit('error', { message: 'Need at least 2 players to start' });
@@ -108,14 +108,12 @@ function registerRoomHandlers(io, socket) {
       socket.emit('error', { message: 'Cannot kick yourself' });
       return;
     }
-    if (!room.hasPlayer(targetId)) {
+    const target = room.getPlayerBySocketId(targetId);
+    if (!target) {
       socket.emit('error', { message: 'Player not found in room' });
       return;
     }
-    const ok = removeMemberFromRoom(io, room, targetId, { reason: 'kicked', byHost: true });
-    if (!ok) {
-      socket.emit('error', { message: 'Failed to kick player' });
-    }
+    removeMemberFromRoom(io, room, target.id, { reason: 'kicked', byHost: true });
   });
 
   socket.on('ban_player', ({ targetId }) => {

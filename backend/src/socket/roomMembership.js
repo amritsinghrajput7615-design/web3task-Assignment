@@ -34,7 +34,11 @@ function removeMemberFromRoom(io, room, socketId, options = {}) {
 
   io.to(socketId).emit(event, { message, reason });
 
-  const targetSocket = io.sockets.sockets.get(socketId);
+  const sockets = io.sockets?.sockets;
+  const targetSocket =
+    sockets && typeof sockets.get === 'function'
+      ? sockets.get(socketId)
+      : sockets?.[socketId];
   if (targetSocket) {
     targetSocket.leave(room.roomId);
   }

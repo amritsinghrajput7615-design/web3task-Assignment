@@ -109,36 +109,33 @@ export default function App() {
     resetHome();
   }, [resetHome]);
 
-  const kickPlayer = useCallback(
-    (targetId: string) => {
-      if (!socketRef.current?.connected) {
-        setError('Not connected to server');
-        return;
-      }
-      setError('');
-      socketRef.current.emit('kick_player', { targetId });
-    },
-    []
-  );
+  const kickPlayer = useCallback((targetId: string) => {
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      setError('Not connected to server');
+      return;
+    }
+    setError('');
+    socket.emit('kick_player', { targetId });
+  }, []);
 
-  const banPlayer = useCallback(
-    (targetId: string) => {
-      if (!socketRef.current?.connected) {
-        setError('Not connected to server');
-        return;
-      }
-      setError('');
-      socketRef.current.emit('ban_player', { targetId });
-    },
-    []
-  );
+  const banPlayer = useCallback((targetId: string) => {
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      setError('Not connected to server');
+      return;
+    }
+    setError('');
+    socket.emit('ban_player', { targetId });
+  }, []);
 
+  // Full page load / reload → always start at home (no auto-rejoin lobby)
   useEffect(() => {
     sessionStorage.removeItem(ACTIVE_ROOM_KEY);
-    if (inviteRoomCode) {
+    if (searchParams.get('room')) {
       window.history.replaceState({}, '', '/');
     }
-  }, [inviteRoomCode]);
+  }, []);
 
   const clientOrigin = () =>
     `${window.location.origin}${window.location.pathname}`.replace(/\/$/, '');

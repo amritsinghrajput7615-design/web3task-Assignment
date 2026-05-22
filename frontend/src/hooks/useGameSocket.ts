@@ -1,9 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
+import { getGameSocket } from '../lib/gameSocket';
 import type { ChatMessage, DrawTool, Player, RoomSettings, Stroke } from '../types';
-
-/** Empty = same origin; Vite proxies /socket.io → backend in dev */
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || undefined;
 
 export const ACTIVE_ROOM_KEY = 'activeRoomId';
 
@@ -71,7 +69,7 @@ export function useGameSocket(
     setTransitionSeconds: (v: number) => void;
   }>,
   addMessage: (msg: ChatMessage) => void,
-  roomCodeFromUrl: string | null,
+  _roomCodeFromUrl: string | null,
   pendingJoin: React.MutableRefObject<{ roomId: string; playerName: string; clientOrigin: string } | null>,
   onExitedRoom?: (message?: string) => void
 ) {
@@ -79,12 +77,10 @@ export function useGameSocket(
   const settersRef = useRef(setters);
   const addMessageRef = useRef(addMessage);
   const onExitedRoomRef = useRef(onExitedRoom);
-  const roomCodeRef = useRef(roomCodeFromUrl);
 
   settersRef.current = setters;
   addMessageRef.current = addMessage;
   onExitedRoomRef.current = onExitedRoom;
-  roomCodeRef.current = roomCodeFromUrl;
 
   const clientOrigin = () =>
     `${window.location.origin}${window.location.pathname}`.replace(/\/$/, '');
@@ -136,21 +132,25 @@ export function useGameSocket(
   };
 
   useEffect(() => {
-    if (socketRef.current) return;
-
-    const socket = io(SERVER_URL, {
-      path: '/socket.io',
-      transports: ['polling', 'websocket'],
-      reconnection: true,
-      reconnectionAttempts: 8,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-    });
+    const socket = getGameSocket();
     socketRef.current = socket;
 
     const getSetters = () => settersRef.current;
 
-    socket.on('connect', () => {
+    /** Only after a dropped connection in the same tab — not on browser reload. */
+    const tryRejoinRoom = () => {
+      const roomId = sessionStorage.getItem(ACTIVE_ROOM_KEY);
+      const savedName = sessionStorage.getItem('playerName');
+      if (roomId && savedName) {
+        socket.emit('join_room', {
+          roomId,
+          playerName: savedName,
+          clientOrigin: clientOrigin(),
+        });
+      }
+    };
+
+    const onConnect = () => {
       getSetters().setConnected?.(true);
       getSetters().setError?.('');
       getSetters().setMyId?.(socket.id!);
@@ -158,19 +158,14 @@ export function useGameSocket(
         socket.emit('join_room', pendingJoin.current);
         pendingJoin.current = null;
       }
-    });
+    };
 
-    socket.on('reconnect', () => {
-      const activeRoom = sessionStorage.getItem(ACTIVE_ROOM_KEY);
-      const savedName = sessionStorage.getItem('playerName');
-      if (activeRoom && savedName) {
-        socket.emit('join_room', {
-          roomId: activeRoom,
-          playerName: savedName,
-          clientOrigin: clientOrigin(),
-        });
-      }
-    });
+    socket.on('connect', onConnect);
+    socket.on('reconnect', tryRejoinRoom);
+
+    if (socket.connected) {
+      onConnect();
+    }
 
     socket.on('disconnect', () => getSetters().setConnected?.(false));
 
@@ -414,9 +409,9 @@ export function useGameSocket(
     });
 
     return () => {
+      socket.off('connect', onConnect);
+      socket.off('reconnect', tryRejoinRoom);
       socket.removeAllListeners();
-      socket.disconnect();
-      socketRef.current = null;
     };
   }, []);
 

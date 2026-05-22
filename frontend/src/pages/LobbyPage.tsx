@@ -59,7 +59,11 @@ export function LobbyPage({
           <label>Room Code</label>
           <div className="invite-value-row">
             <span className="room-code-display">{roomCode || roomId}</span>
-            <button type="button" className="tool-btn" onClick={() => handleCopy('code', onCopyCode)}>
+            <button
+              type="button"
+              className="tool-btn"
+              onClick={() => handleCopy('code', onCopyCode)}
+            >
               {copied === 'code' ? 'Copied!' : 'Copy Code'}
             </button>
           </div>
@@ -67,8 +71,17 @@ export function LobbyPage({
         <div className="invite-block">
           <label>Invite Link</label>
           <div className="invite-value-row">
-            <input className="invite-link-input" readOnly value={inviteLink} onFocus={(e) => e.target.select()} />
-            <button type="button" className="tool-btn" onClick={() => handleCopy('link', onCopyLink)}>
+            <input
+              className="invite-link-input"
+              readOnly
+              value={inviteLink}
+              onFocus={(e) => e.target.select()}
+            />
+            <button
+              type="button"
+              className="tool-btn"
+              onClick={() => handleCopy('link', onCopyLink)}
+            >
               {copied === 'link' ? 'Copied!' : 'Copy Link'}
             </button>
           </div>
@@ -77,7 +90,9 @@ export function LobbyPage({
 
       <div className="lobby-layout" style={{ marginTop: '1.5rem' }}>
         <div className="card">
-          <h2 style={{ marginBottom: '1rem' }}>Players ({players.length}/{settings.maxPlayers})</h2>
+          <h2 style={{ marginBottom: '1rem' }}>
+            Players ({players.length}/{settings.maxPlayers})
+          </h2>
           <ul className="player-list">
             {players.map((p) => (
               <li key={p.id}>
@@ -89,28 +104,7 @@ export function LobbyPage({
                   <span className="player-score">{p.score} pts</span>
                   {isHost && p.id !== myId && (
                     <span className="mod-actions">
-                      <button
-                        type="button"
-                        className="btn-mod btn-kick"
-                        title={`Kick ${p.name}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onKick(p.id);
-                        }}
-                      >
-                        Kick
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-mod btn-ban"
-                        title={`Ban ${p.name}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onBan(p.id);
-                        }}
-                      >
-                        Ban
-                      </button>
+                      
                     </span>
                   )}
                 </span>
@@ -130,7 +124,11 @@ export function LobbyPage({
               )}
             </div>
           )}
-          {!isHost && <p style={{ marginTop: '1rem', color: 'var(--muted)' }}>Waiting for host to start...</p>}
+          {!isHost && (
+            <p style={{ marginTop: '1rem', color: 'var(--muted)' }}>
+              Waiting for host to start...
+            </p>
+          )}
         </div>
 
         <div className="card">

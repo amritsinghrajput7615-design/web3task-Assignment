@@ -7,6 +7,7 @@ class Room {
     this.roomId = roomId;
     this.hostId = hostId;
     this.hostName = hostName;
+    this.originalHostName = hostName;
     this.invitePath = `?room=${roomId}`;
     this.settings = {
       maxPlayers: settings?.maxPlayers ?? 8,
@@ -44,13 +45,20 @@ class Room {
   }
 
   isHost(socketId) {
-    return this.hostId === socketId;
+    if (this.hostId === socketId) return true;
+    const player = this.getPlayerBySocketId(socketId);
+    if (!player) return false;
+    return (
+      this.normalizePlayerName(player.name) ===
+      this.normalizePlayerName(this.originalHostName)
+    );
   }
 
   /** Restore host role when the named host rejoins with a new socket (e.g. after refresh). */
   reclaimHost(socketId, playerName) {
-    if (this.normalizePlayerName(playerName) === this.normalizePlayerName(this.hostName)) {
+    if (this.normalizePlayerName(playerName) === this.normalizePlayerName(this.originalHostName)) {
       this.hostId = socketId;
+      this.hostName = playerName;
       return true;
     }
     return false;
