@@ -128,15 +128,36 @@ npm run start
 
 Builds the frontend and serves it from the backend on port 3001.
 
-## Deployment (Render)
+## Deployment
+
+### Backend (Render / Railway)
 
 1. Push this repo to GitHub
-2. Create a **Web Service** on Render
+2. Create a **Web Service** on [Render](https://render.com) (root: repo root or `backend`)
 3. Build command: `npm run install:all && npm run build`
-4. Start command: `npm run start --prefix backend` or `node backend/server.js` after build
-5. Set `PORT` (Render sets this automatically)
+4. Start command: `node backend/server.js`
+5. Set `PORT` (Render sets this automatically) and optional `MONGODB_URI`
 
-WebSockets work on Render without extra config.
+WebSockets work on Render without extra config. Note the public URL (e.g. `https://your-app.onrender.com`).
+
+### Frontend (Vercel)
+
+The Vercel site is **static only** — it must know where the Socket.IO backend lives.
+
+1. In Vercel → your project → **Settings** → **Environment Variables**, add:
+   - **Name:** `VITE_SERVER_URL`
+   - **Value:** your Render backend URL, e.g. `https://web3task-assignment-t1no.onrender.com` (no trailing slash)
+   - **Environments:** Production (and Preview if you want)
+2. **Redeploy** (env vars are applied at build time for Vite).
+3. Root directory: `frontend` (if the whole monorepo is connected).
+
+This repo includes `frontend/.env.production` and `frontend/vercel.json` with the default Render URL; change them if your backend URL differs.
+
+**Render free tier:** the backend sleeps when idle. Open the Render URL in a tab, wait until it responds, then refresh the Vercel app.
+
+### Single host (Render only)
+
+You can also deploy only on Render: build the frontend and serve it from Express (`npm run start` from repo root) — one URL for UI + WebSockets, no `VITE_SERVER_URL` needed.
 
 ## Project Structure
 

@@ -178,9 +178,13 @@ export function useGameSocket(
 
     socket.on('connect_error', () => {
       getSetters().setConnected?.(false);
-      getSetters().setError?.(
-        'Cannot reach game server. Run: npm run dev (from project root) or start the backend on port 3001, then refresh.'
-      );
+      const serverUrl = import.meta.env.VITE_SERVER_URL;
+      const msg = import.meta.env.PROD
+        ? serverUrl
+          ? `Cannot reach game server at ${serverUrl}. If you use Render, open that URL once to wake it, then refresh.`
+          : 'Cannot reach game server. In Vercel, set Environment Variable VITE_SERVER_URL to your backend URL (e.g. Render), then redeploy.'
+        : 'Cannot reach game server. Run: npm run dev (from project root) or start the backend on port 3001, then refresh.';
+      getSetters().setError?.(msg);
     });
 
     socket.on('error', ({ message }: { message: string }) => getSetters().setError?.(message));
