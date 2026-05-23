@@ -1,197 +1,495 @@
-# Skribbl.io Clone
+# Skribbl Clone
 
-A full-stack multiplayer drawing and guessing game built with **React + TypeScript + Vite** (frontend) and **Node.js + Express + Socket.IO** (backend).
+A full-stack, real-time multiplayer drawing and guessing game inspired by [Skribbl.io](https://skribbl.io). Players join rooms, take turns drawing secret words on a shared HTML5 canvas, and race to guess correctly before time runs out.
 
-## Live Demo
+---
 
-> Deploy to [Render](https://render.com) or [Railway](https://railway.app) and add your URL here:
-> `https://your-skribbl-clone.onrender.com`
+## Project Description
+
+This application pairs a **React + Vite** single-page frontend with a **Node.js + Express + Socket.IO** backend. Gameplay state (rooms, players, strokes, timers) lives in server memory for low-latency sync. **MongoDB Atlas** stores completed game history and leaderboards only—live rounds are never blocked on database writes.
+
+The UI uses a dark theme with teal accents, responsive layout (mobile + desktop), invite links with room codes, and configurable lobby settings (rounds, draw time, hints, max players).
+
+---
+
+## Live Deployment
+
+| Service   | URL |
+|-----------|-----|
+| **Frontend (Vercel)** | [https://skribbl-clone-orcin.vercel.app](https://skribbl-clone-orcin.vercel.app) |
+| **Backend (Render)**  | [https://web3task-assignment-t1no.onrender.com](https://web3task-assignment-t1no.onrender.com) |
+|
+
+> **Note:** On Render’s free tier, the backend may sleep when idle. Open the health URL once, wait for a response, then load the Vercel app.
+
+---
 
 ## Features
 
-- **Multiplayer rooms** — Create or join via room code or invite link
+- **Create & join rooms** — Room codes and shareable invite links (`?room=CODE`)
 - **Configurable lobby** — Max players, rounds, draw time, word choices, hints
-- **Turn-based drawing** — One drawer per round; others guess
-- **Real-time canvas** — Stroke sync over WebSockets
-- **Word selection** — Drawer picks from 1–5 random words
-- **Scoring & leaderboard** — Points based on time remaining; winner at game end
-- **Drawing tools** — Brush colors, size, eraser, undo, clear
-- **Hints** — Letters revealed over time
-- **Chat / guesses** — Wrong guesses in chat; **correct guesses highlighted in green** with points
-- **Room code + invite link** — Both shown in lobby with copy buttons
-- **MongoDB** — Game history & leaderboard only (not live room state)
-- **Missed word reveal** — Red highlight when time runs out and nobody guessed
+- **Turn-based gameplay** — Rotating drawer; total turns = `players × rounds`
+- **Word selection** — Drawer picks from random word options (timed)
+- **Real-time drawing** — HTML5 Canvas stroke sync over WebSockets
+- **Live chat guessing** — Wrong guesses in chat; correct guesses highlighted with points
+- **Scoreboard** — Live scores; end-game leaderboard
+- **Drawing tools** — Brush, eraser, colors, size, undo, clear
+- **Progressive hints** — Letters revealed during the draw phase
+- **Reconnection** — Rejoin by nickname after refresh (in-room)
 
-## Architecture
+
+---
+
+## Tech Stack
+
+### Frontend
+
+| Technology | Purpose |
+|------------|---------|
+| React 19 | UI components & state |
+| TypeScript | Type safety |
+| Vite 6 | Dev server & production build |
+| Tailwind CSS 4 (CDN) | Utility styling + custom game theme |
+| Socket.IO Client | Real-time events |
+| HTML5 Canvas | Drawing surface (800×500 logical coords) |
+| React Router | Client routing & invite URLs |
+
+### Backend
+
+| Technology | Purpose |
+|------------|---------|
+| Node.js | Runtime |
+| Express 5 | HTTP API & static hosting (optional) |
+| Socket.IO 4 | WebSocket rooms & broadcasts |
+
+| In-memory store | Live rooms & gameplay |
+
+### Deployment
+
+| Service | Role |
+|---------|------|
+| **Vercel** | Static frontend hosting |
+| **Render** | Node.js backend + Socket.IO |
+| **MongoDB Atlas** | Managed database |
+
+---
+
+## Folder Structure
 
 ```
-┌─────────────┐     WebSocket (Socket.IO)     ┌────────────────────────────────────────┐
-│   React UI  │ ◄──────────────────────────► │  Express + Socket.IO (in-memory rooms)  │
-│  Canvas +   │   draw_*, guess, chat        │  OOP: Room, Game, Player, MessageHandler│
-│  Lobby      │   round_end (wasGuessed)     │  GameHistoryService → MongoDB           │
-└─────────────┘                               └────────────────────────────────────────┘
+Scrible-Assignment/
+├── backend/
+│   ├── server.js                 # Express + Socket.IO entry
+│   ├── data/
+│   │   └── words.json            # Word categories
+│   ├── .env.example
+│   └── src/
+│       ├── classes/
+│       │   ├── Room.js           # Players, host, bans, invites
+│       │   ├── Game.js           # Rounds, timers, scoring
+│       │   ├── Player.js
+│       │   └── GameTimerManager.js
+│       ├── config/
+│       │   └── database.js       # MongoDB connection
+│       ├── handlers/
+│       │   ├── MessageHandler.js # Chat & guess messages
+│       │   └── SocketHandlerRegistry.js
+│       ├── models/
+│       │   └── GameHistory.js    # Mongoose schema
+│       ├── services/
+│       │   ├── GameHistoryService.js
+│       │   └── WordService.js
+│       ├── socket/
+│       │   ├── roomHandlers.js
+│       │   ├── gameHandlers.js
+│       │   ├── drawHandlers.js
+│       │   ├── chatHandlers.js
+│       │   └── roomMembership.js
+│       ├── store/
+│       │   └── roomStore.js      # In-memory room map
+│       └── utils/
+│           ├── wordMatcher.js
+│           └── GameEvents.js
+├── frontend/
+│   ├── index.html                # Tailwind CDN
+│   ├── vite.config.ts            # Dev proxy → :3001
+│   ├── vercel.json
+│   ├── .env.example
+│   ├── .env.production
+│   └── src/
+│       ├── App.tsx
+│       ├── main.tsx
+│       ├── types.ts
+│       ├── components/
+│       │   ├── DrawingCanvas.tsx
+│       │   ├── DrawingToolbar.tsx
+│       │   └── ChatPanel.tsx
+│       ├── hooks/
+│       │   └── useGameSocket.ts
+│       ├── lib/
+│       │   └── gameSocket.ts
+│       └── pages/
+│           ├── HomePage.tsx
+│           ├── LobbyPage.tsx
+│           └── GamePage.tsx
+├── package.json                  # Root scripts (dev, build, start)
+├── README.md
+└── ARCHITECTURE.md
 ```
 
-### OOP structure (backend)
+---
 
-| Class | Role |
-|-------|------|
-| `Room` | Players, settings, host, broadcasts |
-| `Game` | Rounds, timer, scoring, word selection |
-| `Player` | Name, score, drawer/guesser state |
-| `MessageHandler` | Chat, correct/wrong guess messages |
-| `SocketHandlerRegistry` | Registers all socket events |
-| `GameHistoryService` | MongoDB: history + leaderboard persistence |
-| `WordService` | Random words from local JSON |
-
-### MongoDB `GameHistory` document
-
-| Field | Description |
-|-------|-------------|
-| `roomId` | Room code |
-| `hostName` | Host display name |
-| `players` | Final player list with scores |
-| `totalRounds` / `currentRound` | Round tracking |
-| `winner` | Winner id, name, score |
-| `leaderboard` | Ranked scores |
-| `wordsUsed` | Each round's word + `wasGuessed` |
-| `gameStartTime` / `gameEndTime` | Session timestamps |
-| `createdAt` | Auto (Mongoose timestamps) |
-
-### Drawing sync
-
-1. Drawer starts a stroke → `draw_start` with `{ x, y, color, size }`
-2. Moves → `draw_move` with `{ x, y }`; server appends to stroke history and broadcasts
-3. Viewers render strokes on HTML5 Canvas from accumulated `draw_data` / `draw_move` events
-4. Undo/clear broadcast to all clients
-
-### Game state
-
-- `Room` holds players, settings, host; `Game` manages rounds, timer, scoring, hints
-- Total drawing turns = `playerCount × rounds`
-- Drawer rotates each round; first correct guess awards points (time-based)
-
-### Word matching
-
-Guesses are trimmed and compared case-insensitively (`guess.trim().toLowerCase() === word.trim().toLowerCase()`).
-
-## Local Setup
+## Installation
 
 ### Prerequisites
 
-- Node.js 18+
-- MongoDB (local or [MongoDB Atlas](https://www.mongodb.com/atlas) free tier)
+- **Node.js** 18 or newer  
+- **npm** 9+  
+- **MongoDB** — local instance or [MongoDB Atlas](https://www.mongodb.com/atlas) free cluster  
 
-### MongoDB setup
-
-1. Copy `backend/.env.example` to `backend/.env`
-2. Set your connection string:
-
-```env
-MONGODB_URI=mongodb://127.0.0.1:27017/skribbl-clone
-PORT=3001
-```
-
-3. Start MongoDB locally, or use Atlas and paste the Atlas URI.
-
-Live gameplay is always in-memory. MongoDB only stores completed game history when `MONGODB_URI` is set.
-
-**History API:**
-- `GET /api/history/room/:roomId` — past games for a room
-- `GET /api/history/recent` — recent completed games with leaderboards
-
-### Install
+### Clone & install dependencies
 
 ```bash
+git clone <your-repo-url>
+cd Scrible-Assignment
 npm run install:all
 ```
 
-### Development (two terminals)
+This runs `npm install` in both `backend/` and `frontend/`.
 
-**Terminal 1 — Backend (port 3001):**
+---
+
+## Environment Variables
+
+### Backend (`backend/.env`)
+
+Copy `backend/.env.example` to `backend/.env`:
+
+```env
+# Local MongoDB
+MONGODB_URI=mongodb://127.0.0.1:27017/skribbl-clone
+
+# MongoDB Atlas (production)
+# MONGODB_URI=mongodb+srv://USER:PASSWORD@cluster0.xxxxx.mongodb.net/skribbl-clone?retryWrites=true&w=majority
+
+PORT=3001
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MONGODB_URI` | No* | Atlas/local URI; history disabled if missing or unreachable |
+| `PORT` | No | HTTP port (default `3001`; Render sets this automatically) |
+
+\*Game runs without MongoDB; history APIs return empty and writes are skipped.
+
+### Frontend (`frontend/.env`)
+
+**Development** — `frontend/.env.development` (optional):
+
+```env
+# Leave empty to use Vite proxy (localhost:5173 → localhost:3001)
+# VITE_SERVER_URL=http://localhost:3001
+```
+
+**Production (Vercel)** — set in Vercel dashboard or use `frontend/.env.production`:
+
+```env
+VITE_SERVER_URL=https://web3task-assignment-t1no.onrender.com
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_SERVER_URL` | Yes (Vercel) | Public Render backend URL, **no trailing slash** |
+
+> Vite embeds `VITE_*` variables at **build time**. Redeploy after changing them.
+
+---
+
+## Backend Setup
+
+```bash
+cd backend
+cp .env.example .env
+# Edit .env — set MONGODB_URI (Atlas recommended for deployment)
+npm run dev
+```
+
+Server starts on `http://localhost:3001` with Socket.IO on path `/socket.io`.
+
+Verify:
+
+```bash
+curl http://localhost:3001/api/health
+```
+
+Expected response:
+
+```json
+{
+  "ok": true,
+  "persistence": "game_history_only",
+  "database": { "connected": true, "database": "skribbl-clone" }
+}
+```
+
+---
+
+## Frontend Setup
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173). WebSocket traffic is proxied to the backend via `vite.config.ts`.
+
+Production build:
+
+```bash
+cd frontend
+npm run build
+npm run preview
+```
+
+---
+
+## Running Locally
+
+### Option A — Two terminals (recommended for development)
+
+**Terminal 1 — Backend:**
+
 ```bash
 cd backend && npm run dev
 ```
 
-**Terminal 2 — Frontend (port 5173):**
+**Terminal 2 — Frontend:**
+
 ```bash
 cd frontend && npm run dev
 ```
 
-Open http://localhost:5173 — the Vite dev server proxies WebSocket traffic to the backend.
+### Option B — Single command (from repo root)
 
-### Production build
+```bash
+npm run dev
+```
+
+Uses `concurrently` to start both servers.
+
+### Option C — Production-style (one server)
 
 ```bash
 npm run start
 ```
 
-Builds the frontend and serves it from the backend on port 3001.
+Builds the frontend and serves it from Express on port `3001` (same origin, no `VITE_SERVER_URL` needed).
+
+---
 
 ## Deployment
 
-### Backend (Render / Railway)
+### Backend on Render
 
-1. Push this repo to GitHub
-2. Create a **Web Service** on [Render](https://render.com) (root: repo root or `backend`)
-3. Build command: `npm run install:all && npm run build`
-4. Start command: `node backend/server.js`
-5. Set `PORT` (Render sets this automatically) and optional `MONGODB_URI`
+1. Connect GitHub repository.  
+2. **Build command:** `npm run install:all && npm run build`  
+3. **Start command:** `node backend/server.js`  
+4. Set **`MONGODB_URI`** to your Atlas connection string.  
+5. Note the public URL (e.g. `https://web3task-assignment-t1no.onrender.com`).
 
-WebSockets work on Render without extra config. Note the public URL (e.g. `https://your-app.onrender.com`).
+### Frontend on Vercel
 
-### Frontend (Vercel)
+1. Set **Root Directory** to `frontend`.  
+2. Add environment variable:  
+   - `VITE_SERVER_URL` = your Render backend URL  
+3. Deploy / redeploy.
 
-The Vercel site is **static only** — it must know where the Socket.IO backend lives.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for why the backend is not hosted on Vercel.
 
-1. In Vercel → your project → **Settings** → **Environment Variables**, add:
-   - **Name:** `VITE_SERVER_URL`
-   - **Value:** your Render backend URL, e.g. `https://web3task-assignment-t1no.onrender.com` (no trailing slash)
-   - **Environments:** Production (and Preview if you want)
-2. **Redeploy** (env vars are applied at build time for Vite).
-3. Root directory: `frontend` (if the whole monorepo is connected).
+---
 
-This repo includes `frontend/.env.production` and `frontend/vercel.json` with the default Render URL; change them if your backend URL differs.
+## API Overview
 
-**Render free tier:** the backend sleeps when idle. Open the Render URL in a tab, wait until it responds, then refresh the Vercel app.
+Base URL (local): `http://localhost:3001`  
+Base URL (production): `https://web3task-assignment-t1no.onrender.com`
 
-### Single host (Render only)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/health` | Server & MongoDB status |
+| `GET` | `/api/words/categories` | Word category keys from `words.json` |
+| `GET` | `/api/history/room/:roomId` | Past games for a room code |
+| `GET` | `/api/history/recent` | Recent completed games |
 
-You can also deploy only on Render: build the frontend and serve it from Express (`npm run start` from repo root) — one URL for UI + WebSockets, no `VITE_SERVER_URL` needed.
+### Example: Health check
 
-## Project Structure
-
-```
-├── backend/
-│   ├── server.js              # Entry point
-│   ├── data/words.json        # Word categories
-│   └── src/
-│       ├── classes/           # Room, Game, Player (OOP)
-│       ├── socket/            # Event handlers
-│       ├── store/roomStore.js
-│       └── utils/wordMatcher.js
-├── frontend/
-│   └── src/
-│       ├── components/        # Canvas, toolbar, chat
-│       └── pages/             # Home, lobby, game
-└── README.md
+```http
+GET /api/health
 ```
 
-## WebSocket Events
+```json
+{
+  "ok": true,
+  "persistence": "game_history_only",
+  "database": {
+    "connected": true,
+    "database": "skribbl-clone"
+  }
+}
+```
 
-| Event | Direction | Description |
-|-------|-----------|-------------|
-| `create_room` | C→S | Host creates room |
-| `join_room` | C→S | Player joins by code |
-| `start_game` | C→S | Host starts (min 2 players) |
-| `round_start` | S→C | New round; drawer gets word options |
-| `word_chosen` | C→S | Drawer selects word |
-| `draw_start/move/end` | C→S | Drawing strokes |
-| `draw_data` / `draw_move` | S→C | Broadcast strokes |
-| `guess` | C→S | Submit guess |
-| `guess_result` | S→C | Correct guess notification |
-| `timer` | S→C | Countdown updates |
-| `round_end` / `game_over` | S→C | Round/game completion |
+### Example: Room history
+
+```http
+GET /api/history/room/XATDKC
+```
+
+```json
+{
+  "roomId": "XATDKC",
+  "history": [
+    {
+      "roomId": "XATDKC",
+      "hostName": "Alice",
+      "status": "completed",
+      "winner": { "playerName": "Bob", "score": 1200 },
+      "leaderboard": [
+        { "rank": 1, "playerName": "Bob", "score": 1200 }
+      ],
+      "wordsUsed": [
+        { "word": "apple", "round": 1, "wasGuessed": true, "drawerName": "Alice" }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Socket Events Overview
+
+### Client → Server
+
+| Event | Payload (example) | Description |
+|-------|-------------------|-------------|
+| `create_room` | `{ hostName, settings, clientOrigin }` | Create room |
+| `join_room` | `{ roomId, playerName, clientOrigin }` | Join / reconnect |
+| `leave_room` | — | Leave room |
+| `start_game` | — | Host starts (≥ 2 players) |
+| `word_chosen` | `{ word: "apple" }` | Drawer selects word |
+| `draw_start` | `{ x, y, color, size }` | Begin stroke |
+| `draw_move` | `{ x, y }` | Continue stroke |
+| `draw_end` | — | End stroke |
+| `draw_undo` | — | Remove last stroke |
+| `canvas_clear` | — | Clear canvas (drawer only) |
+| `guess` | `{ text: "apple" }` | Submit guess |
+| `kick_player` | `{ targetId }` | Host kicks player |
+| `ban_player` | `{ targetId }` | Host bans player |
+
+### Server → Client
+
+| Event | Description |
+|-------|-------------|
+| `room_created` / `room_joined` | Lobby state + optional game snapshot |
+| `player_joined` / `player_left` | Roster updates |
+| `round_start` | New turn, word options for drawer |
+| `word_selected` / `word_chosen_ack` | Drawing phase begins |
+| `draw_data` | New stroke from drawer |
+| `draw_move` | Point appended to stroke |
+| `draw_undo` | Stroke list updated |
+| `canvas_clear` | Clear all strokes |
+| `timer` / `timer_update` | Countdown sync |
+| `hint_update` | Hint letters updated |
+| `chat_message` | Chat / system / guess messages |
+| `guess_result` / `correct_guess` | Correct guess metadata |
+| `round_end` | Round summary + word reveal |
+| `game_over` | Final leaderboard |
+| `error` | `{ message: string }` |
+
+### Example payloads
+
+**`create_room` (client → server):**
+
+```json
+{
+  "hostName": "Alice",
+  "settings": {
+    "maxPlayers": 8,
+    "rounds": 3,
+    "drawTime": 80,
+    "wordCount": 3,
+    "hints": 2,
+    "wordMode": "normal",
+    "isPrivate": false
+  },
+  "clientOrigin": "https://skribbl-clone-orcin.vercel.app"
+}
+```
+
+**`draw_start` (client → server):**
+
+```json
+{
+  "x": 142.5,
+  "y": 88.0,
+  "color": "#000000",
+  "size": 6
+}
+```
+
+**`draw_data` (server → clients):**
+
+```json
+{
+  "id": 1713876543210,
+  "points": [{ "x": 142.5, "y": 88.0 }],
+  "color": "#000000",
+  "size": 6
+}
+```
+
+**`round_end` (server → clients):**
+
+```json
+{
+  "word": "apple",
+  "wasGuessed": true,
+  "guesserName": "Bob",
+  "points": 420,
+  "scores": [
+    { "id": "socketId1", "name": "Alice", "score": 105 },
+    { "id": "socketId2", "name": "Bob", "score": 420 }
+  ],
+  "transitionSeconds": 4
+}
+```
+
+For full event flow diagrams, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+---
+
+## Future Improvements
+
+- [ ] Redis adapter for multi-instance Socket.IO scaling  
+- [ ] Private rooms with passwords  
+- [ ] Custom word lists per room  
+- [ ] Sound effects & animations  
+- [ ] Spectator mode  
+- [ ] Rate limiting & abuse prevention on guesses  
+- [ ] E2E tests (Playwright) for create → draw → guess flow  
+- [ ] PWA / offline lobby  
+
+---
+
+## Author
+
+**Amrit Kumar**  
+Internship / Web3 Task Assignment — Full-Stack Real-Time Multiplayer Game  
+
+- GitHub: `https://github.com/amritsinghrajput7615-design/web3task-Assignment`  
+- Frontend: [skribbl-clone-orcin.vercel.app](https://skribbl-clone-orcin.vercel.app)  
+- Backend: [web3task-assignment-t1no.onrender.com](https://web3task-assignment-t1no.onrender.com)  
+
+---
 
 ## License
 
