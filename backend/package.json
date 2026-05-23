@@ -4,7 +4,7 @@
   "description": "Skribbl.io clone - multiplayer drawing game server",
   "main": "server.js",
   "scripts": {
-    "start": "npx nodemon server.js",
+    "start": "node server.js",
     "dev": "node --watch server.js"
   },
   "license": "ISC",
