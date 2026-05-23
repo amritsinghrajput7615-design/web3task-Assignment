@@ -292,7 +292,11 @@ class Game {
     const elapsed = this.drawTime - this.timeLeft;
     const interval = Math.floor(this.drawTime / (maxHints + 1));
     const targetLevel = Math.min(maxHints, Math.floor(elapsed / interval));
-    if (targetLevel > this.hintLevel) { this.hintLevel = targetLevel; this.syncGameState({ hints: this.buildHintDisplay(this.currentWord) }); }
+    if (targetLevel > this.hintLevel) {
+      this.hintLevel = targetLevel;
+      const hints = this.buildHintDisplay(this.currentWord);
+      this.events.broadcast('hint_update', { hints });
+    }
   }
 
   buildHintDisplay(word) {

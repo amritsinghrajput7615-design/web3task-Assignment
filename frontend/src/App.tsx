@@ -46,6 +46,27 @@ export default function App() {
 
   const handleExitedRoom = useCallback(() => setError(''), []);
 
+  const savedRoomId = sessionStorage.getItem(ACTIVE_ROOM_KEY);
+  const savedName = sessionStorage.getItem('playerName');
+  const isAutoReconnecting = Boolean(
+    savedRoomId && savedName && phase === 'home' && connected && !error
+  );
+
+  useEffect(() => {
+    if (!isAutoReconnecting) return;
+    const timeout = window.setTimeout(() => {
+      sessionStorage.removeItem(ACTIVE_ROOM_KEY);
+      setError('Could not rejoin your game. The room may have ended — try joining again.');
+    }, 12000);
+    return () => window.clearTimeout(timeout);
+  }, [isAutoReconnecting]);
+
+  useEffect(() => {
+    if (error && phase === 'home') {
+      sessionStorage.removeItem(ACTIVE_ROOM_KEY);
+    }
+  }, [error, phase]);
+
   const socketSetters = useMemo(
     () => ({
       setConnected,
@@ -195,9 +216,7 @@ export default function App() {
     phase === 'round_end' ||
     phase === 'word_select';
 
-  const savedRoomId = sessionStorage.getItem(ACTIVE_ROOM_KEY);
-  const savedName = sessionStorage.getItem('playerName');
-  if (savedRoomId && savedName && phase === 'home' && connected) {
+  if (isAutoReconnecting) {
     return (
       <div className="app">
         <h1 className="title">Skribbl Clone</h1>

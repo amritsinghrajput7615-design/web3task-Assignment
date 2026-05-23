@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Stroke } from '../types';
 
 const COLORS = ['#000000', '#ffffff', '#ff6b6b', '#4ecdc4', '#ffd93d', '#6c5ce7', '#fd79a8', '#00b894'];
 const CANVAS_W = 800;
 const CANVAS_H = 500;
+const ASPECT = CANVAS_W / CANVAS_H;
 
 interface Props {
   strokes: Stroke[];
@@ -36,6 +37,19 @@ function redraw(ctx: CanvasRenderingContext2D, strokes: Stroke[]) {
   strokes.forEach((s) => drawStroke(ctx, s));
 }
 
+function fitCanvasToContainer(containerW: number, containerH: number) {
+  if (containerW <= 0 || containerH <= 0) {
+    return { width: CANVAS_W, height: CANVAS_H };
+  }
+  const containerAspect = containerW / containerH;
+  if (containerAspect > ASPECT) {
+    const height = Math.floor(containerH);
+    return { width: Math.floor(height * ASPECT), height };
+  }
+  const width = Math.floor(containerW);
+  return { width, height: Math.floor(width / ASPECT) };
+}
+
 export function DrawingCanvas({
   strokes,
   isDrawer,
@@ -46,15 +60,37 @@ export function DrawingCanvas({
   onStrokeMove,
   onStrokeEnd,
 }: Props) {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const currentStrokeRef = useRef<Stroke | null>(null);
+  const [displaySize, setDisplaySize] = useState({ width: CANVAS_W, height: CANVAS_H });
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+
+    const updateSize = () => {
+      const { width, height } = wrap.getBoundingClientRect();
+      setDisplaySize(fitCanvasToContainer(width, height));
+    };
+
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, []);
 
   const getPos = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    const scaleX = CANVAS_W / rect.width;
-    const scaleY = CANVAS_H / rect.height;
+    if (rect.width <= 0 || rect.height <= 0) {
+      return { x: 0, y: 0 };
+    }
+
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
     let clientX: number;
     let clientY: number;
     if ('touches' in e) {
@@ -64,9 +100,13 @@ export function DrawingCanvas({
       clientX = e.clientX;
       clientY = e.clientY;
     }
+
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
+
     return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
+      x: Math.max(0, Math.min(canvas.width, x)),
+      y: Math.max(0, Math.min(canvas.height, y)),
     };
   }, []);
 
@@ -117,11 +157,17 @@ export function DrawingCanvas({
   };
 
   return (
-    <div className="canvas-wrap">
+    <div ref={wrapRef} className="canvas-wrap">
       <canvas
         ref={canvasRef}
         width={CANVAS_W}
         height={CANVAS_H}
+        className="drawing-canvas"
+        style={{
+          width: displaySize.width,
+          height: displaySize.height,
+          pointerEvents: canDraw && isDrawer ? 'auto' : 'none',
+        }}
         onMouseDown={handleStart}
         onMouseMove={handleMove}
         onMouseUp={handleEnd}
@@ -129,7 +175,6 @@ export function DrawingCanvas({
         onTouchStart={handleStart}
         onTouchMove={handleMove}
         onTouchEnd={handleEnd}
-        style={{ pointerEvents: canDraw && isDrawer ? 'auto' : 'none' }}
       />
     </div>
   );

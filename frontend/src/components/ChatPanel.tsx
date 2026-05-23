@@ -7,9 +7,10 @@ interface Props {
   placeholder: string;
   myId: string;
   onSend: (text: string, isGuess: boolean) => void;
+  logTitle?: string;
 }
 
-export function ChatPanel({ messages, disabled, placeholder, myId, onSend }: Props) {
+export function ChatPanel({ messages, disabled, placeholder, myId, onSend, logTitle }: Props) {
   const [text, setText] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -27,6 +28,12 @@ export function ChatPanel({ messages, disabled, placeholder, myId, onSend }: Pro
 
   return (
     <div className="chat-panel">
+      {logTitle && (
+        <div className="chat-log-header">
+          <span className="chat-log-dot" aria-hidden />
+          <span className="chat-log-title">{logTitle}</span>
+        </div>
+      )}
       <div className="chat-messages">
         {messages.map((msg, i) => {
           const isMyCorrect = msg.isCorrect && msg.playerId === myId;

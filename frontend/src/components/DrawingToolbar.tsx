@@ -66,11 +66,11 @@ export function DrawingToolbar({
 
       <input
         type="range"
+        className="brush-size-slider"
         min={2}
         max={24}
         value={brushSize}
         onChange={(e) => onSizeChange(Number(e.target.value))}
-        style={{ width: 100 }}
         title="Brush size"
         disabled={isEraser}
       />

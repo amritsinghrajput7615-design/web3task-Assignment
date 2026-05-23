@@ -101,9 +101,9 @@ export function useGameSocket(
     if (data.totalRounds !== undefined) st.setTotalRounds?.(data.totalRounds as number);
     if (data.players) st.setPlayers?.(data.players as Player[]);
     if (data.wordChoices) st.setWordOptions?.(data.wordChoices as string[]);
-    if (data.phase === 'drawing') {
-      st.setStrokes?.([]);
-      if (data.timeLeft !== undefined) st.setTimeLeft?.(data.timeLeft as number);
+    // Sync strokes only when server sends them (reconnect); never clear on timer/hint updates.
+    if (Array.isArray(data.strokes)) {
+      st.setStrokes?.(data.strokes as Stroke[]);
     }
     if (data.phase === 'word_select') {
       st.setTimeLeft?.(0);
@@ -140,15 +140,19 @@ export function useGameSocket(
 
     const tryRejoinRoom = () => {
       if (pendingJoin.current) return;
-      const roomId = sessionStorage.getItem(ACTIVE_ROOM_KEY);
+      const urlRoom = _roomCodeFromUrl?.trim().toUpperCase() || null;
+      const storedRoom = sessionStorage.getItem(ACTIVE_ROOM_KEY);
+      const roomId = urlRoom || storedRoom;
       const playerName = sessionStorage.getItem(PLAYER_NAME_KEY);
-      if (roomId && playerName) {
-        socket.emit('join_room', {
-          roomId,
-          playerName,
-          clientOrigin: clientOrigin(),
-        });
+      if (!roomId || !playerName) return;
+      if (urlRoom && urlRoom !== storedRoom) {
+        sessionStorage.setItem(ACTIVE_ROOM_KEY, urlRoom);
       }
+      socket.emit('join_room', {
+        roomId,
+        playerName,
+        clientOrigin: clientOrigin(),
+      });
     };
 
     const onConnect = () => {
@@ -406,6 +410,10 @@ export function useGameSocket(
       }
     });
 
+    socket.on('hint_update', ({ hints }: { hints: string }) => {
+      getSetters().setHints?.(hints);
+    });
+
     socket.on('word_select_timeout', ({ message }: { message: string }) => {
       addMessageRef.current({ playerId: '', playerName: '', text: message, isGuess: false, isCorrect: false, points: 0, system: true });
     });
@@ -489,7 +497,39 @@ export function useGameSocket(
     return () => {
       socket.off('connect', onConnect);
       socket.off('reconnect', tryRejoinRoom);
-      socket.removeAllListeners();
+      socket.off('disconnect');
+      socket.off('connect_error');
+      socket.off('error');
+      socket.off('room_created');
+      socket.off('room_joined');
+      socket.off('player_reconnected');
+      socket.off('player_joined');
+      socket.off('room_left');
+      socket.off('kicked');
+      socket.off('banned');
+      socket.off('player_left');
+      socket.off('round_start');
+      socket.off('word_select_timer');
+      socket.off('selectionTimerUpdate');
+      socket.off('word_selection_started');
+      socket.off('timer_update');
+      socket.off('hint_update');
+      socket.off('word_select_timeout');
+      socket.off('word_chosen_ack');
+      socket.off('word_selected');
+      socket.off('game_state');
+      socket.off('timer');
+      socket.off('roundTimerUpdate');
+      socket.off('round_guessed');
+      socket.off('correct_guess');
+      socket.off('draw_data');
+      socket.off('draw_move');
+      socket.off('canvas_clear');
+      socket.off('draw_undo');
+      socket.off('guess_result');
+      socket.off('chat_message');
+      socket.off('round_end');
+      socket.off('game_over');
     };
   }, []);
 
