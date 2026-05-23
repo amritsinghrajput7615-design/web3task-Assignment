@@ -67,6 +67,7 @@ export default function App() {
       setRound,
       setTotalRounds,
       setStrokes,
+      setMessages,
       setActiveTool,
       setLeaderboard,
       setWinnerName,
@@ -129,19 +130,11 @@ export default function App() {
     socket.emit('ban_player', { targetId });
   }, []);
 
-  // Full page load / reload → always start at home (no auto-rejoin lobby)
-  useEffect(() => {
-    sessionStorage.removeItem(ACTIVE_ROOM_KEY);
-    if (searchParams.get('room')) {
-      window.history.replaceState({}, '', '/');
-    }
-  }, []);
-
   const clientOrigin = () =>
     `${window.location.origin}${window.location.pathname}`.replace(/\/$/, '');
 
   const createRoom = (name: string, roomSettings: RoomSettings) => {
-    sessionStorage.setItem('playerName', name);
+    sessionStorage.setItem('playerName', name.trim());
     setError('');
     socketRef.current?.emit('create_room', {
       hostName: name,
@@ -151,7 +144,8 @@ export default function App() {
   };
 
   const joinRoom = (code: string, name: string) => {
-    sessionStorage.setItem('playerName', name);
+    sessionStorage.setItem('playerName', name.trim());
+    sessionStorage.setItem(ACTIVE_ROOM_KEY, code.toUpperCase());
     setError('');
     const payload = { roomId: code, playerName: name, clientOrigin: clientOrigin() };
     if (!socketRef.current?.connected) {
@@ -200,6 +194,17 @@ export default function App() {
     (phase === 'drawing' && (isDrawer || !!myPlayer?.hasGuessed)) ||
     phase === 'round_end' ||
     phase === 'word_select';
+
+  const savedRoomId = sessionStorage.getItem(ACTIVE_ROOM_KEY);
+  const savedName = sessionStorage.getItem('playerName');
+  if (savedRoomId && savedName && phase === 'home' && connected) {
+    return (
+      <div className="app">
+        <h1 className="title">Skribbl Clone</h1>
+        <p className="subtitle">Reconnecting to your game...</p>
+      </div>
+    );
+  }
 
   if (phase === 'home') {
     return (

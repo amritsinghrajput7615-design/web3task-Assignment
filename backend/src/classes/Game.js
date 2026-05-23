@@ -93,6 +93,47 @@ class Game {
     this.events.broadcast('game_state', this.getPublicState(extra));
   }
 
+  /** Full state for a player reconnecting after refresh. */
+  getReconnectSnapshot(socketId) {
+    const isDrawer = socketId === this.currentDrawerId;
+    const phase = this.phase === 'playing' ? 'word_select' : this.phase;
+
+    const snapshot = {
+      phase,
+      players: this.room.getPublicPlayers(),
+      round: this.getDisplayRound(),
+      totalRounds: this.totalRounds,
+      drawerId: this.currentDrawerId,
+      drawerName: this.currentDrawerName,
+      timeLeft: this.timeLeft,
+      wordSelectTimeLeft: this.wordSelectTimeLeft,
+      hints: this.currentWord && this.phase === 'drawing' ? this.buildHintDisplay(this.currentWord) : '',
+      strokes: [...this.strokeHistory],
+      messages: [...this.room.chatHistory],
+      roundWasGuessed: this.phase === 'round_end' ? Boolean(this._lastWasGuessed) : false,
+      lastGuesserName: this.phase === 'round_end' ? this._lastGuesserName : null,
+      transitionSeconds: 4,
+      wordOptions: null,
+      currentWord: null,
+    };
+
+    if (this.phase === 'word_select') {
+      snapshot.wordOptions = isDrawer ? this.wordOptions : null;
+    }
+    if (this.phase === 'drawing' || this.phase === 'round_end') {
+      snapshot.currentWord = isDrawer ? this.currentWord : null;
+      if (this.phase === 'round_end') {
+        snapshot.currentWord = this.currentWord;
+      }
+    }
+    if (this.phase === 'ended') {
+      snapshot.leaderboard = this.getLeaderboard();
+      snapshot.winnerName = snapshot.leaderboard[0]?.name;
+    }
+
+    return snapshot;
+  }
+
   broadcastTimerUpdate() {
     if (this.phase === 'word_select') {
       this.events.broadcast('timer_update', { phase: 'word_select', wordSelectTimeLeft: this.wordSelectTimeLeft, timeLeft: this.wordSelectTimeLeft });

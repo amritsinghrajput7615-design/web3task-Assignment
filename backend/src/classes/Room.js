@@ -20,6 +20,8 @@ class Room {
     };
     this.players = new Map();
     this.bannedNames = new Set();
+    this.chatHistory = [];
+    this.disconnectTimers = new Map();
     this.io = io;
     this.drawerIndex = 0;
 
@@ -85,7 +87,62 @@ class Room {
     return true;
   }
 
+  findPlayerByName(playerName) {
+    const key = this.normalizePlayerName(playerName);
+    for (const [, player] of this.players) {
+      if (this.normalizePlayerName(player.name) === key) return player;
+    }
+    return null;
+  }
+
+  cancelDisconnectRemoval(socketId) {
+    const timer = this.disconnectTimers.get(socketId);
+    if (timer) {
+      clearTimeout(timer);
+      this.disconnectTimers.delete(socketId);
+    }
+  }
+
+  scheduleDisconnectRemoval(socketId, onRemove, delayMs = 20000) {
+    this.cancelDisconnectRemoval(socketId);
+    const timer = setTimeout(() => {
+      this.disconnectTimers.delete(socketId);
+      onRemove();
+    }, delayMs);
+    this.disconnectTimers.set(socketId, timer);
+  }
+
+  /** Same nickname reconnected with a new socket (page refresh). */
+  reconnectPlayerByName(newSocketId, playerName) {
+    const existing = this.findPlayerByName(playerName);
+    if (!existing) return null;
+
+    const oldSocketId = existing.id;
+    this.cancelDisconnectRemoval(oldSocketId);
+
+    if (oldSocketId !== newSocketId) {
+      this.players.delete(oldSocketId);
+      existing.id = newSocketId;
+      existing.socketId = newSocketId;
+      this.players.set(newSocketId, existing);
+      if (this.hostId === oldSocketId) this.hostId = newSocketId;
+      if (this.game.currentDrawerId === oldSocketId) {
+        this.game.currentDrawerId = newSocketId;
+      }
+    }
+
+    return { player: existing, oldSocketId };
+  }
+
+  appendChatMessage(msg) {
+    this.chatHistory.push(msg);
+    if (this.chatHistory.length > 100) {
+      this.chatHistory = this.chatHistory.slice(-100);
+    }
+  }
+
   removePlayer(socketId) {
+    this.cancelDisconnectRemoval(socketId);
     const wasHost = this.hostId === socketId;
     this.players.delete(socketId);
 

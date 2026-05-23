@@ -25,7 +25,7 @@ class MessageHandler {
   }
 
   sendChat(playerId, playerName, text, options = {}) {
-    this.broadcast('chat_message', {
+    const msg = {
       playerId,
       playerName,
       text,
@@ -34,7 +34,11 @@ class MessageHandler {
       points: options.points ?? 0,
       system: options.system ?? false,
       maskedWord: options.maskedWord ?? undefined,
-    });
+      wordMissed: options.wordMissed ?? undefined,
+      revealedWord: options.revealedWord ?? undefined,
+    };
+    this.room.appendChatMessage(msg);
+    this.broadcast('chat_message', msg);
   }
 
   sendCorrectGuess(playerId, playerName, guessText, points) {
@@ -87,16 +91,17 @@ class MessageHandler {
   }
 
   sendRoundTimeout(word) {
-    // ✅ Timeout is when you WANT to reveal — this is intentional
-    this.broadcast('chat_message', {
+    const msg = {
       playerId: '',
       playerName: '',
       text: "Time's up! Nobody guessed the word:",
       isGuess: false,
       system: true,
       wordMissed: true,
-      revealedWord: word,         // intentional reveal on timeout
-    });
+      revealedWord: word,
+    };
+    this.room.appendChatMessage(msg);
+    this.broadcast('chat_message', msg);
   }
 
   sendWrongGuess(playerId, playerName, text) {

@@ -4,6 +4,7 @@ import { getGameSocket } from '../lib/gameSocket';
 import type { ChatMessage, DrawTool, Player, RoomSettings, Stroke } from '../types';
 
 export const ACTIVE_ROOM_KEY = 'activeRoomId';
+const PLAYER_NAME_KEY = 'playerName';
 
 export type GamePhase = 'home' | 'lobby' | 'word_select' | 'drawing' | 'round_end' | 'ended';
 
@@ -59,8 +60,8 @@ export function useGameSocket(
     setWordSelectTimeLeft: (v: number) => void;
     setRound: (v: number) => void;
     setTotalRounds: (v: number) => void;
-    setStrokes: React.Dispatch<React.SetStateAction<Stroke[]>>;
-    setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+    setStrokes: React.Dispatch<React.SetStateAction<Stroke[]>> | ((v: Stroke[]) => void);
+    setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>> | ((v: ChatMessage[]) => void);
     setActiveTool: (v: DrawTool) => void;
     setLeaderboard: (v: Player[] | undefined) => void;
     setWinnerName: (v: string | undefined) => void;
@@ -137,14 +138,14 @@ export function useGameSocket(
 
     const getSetters = () => settersRef.current;
 
-    /** Only after a dropped connection in the same tab — not on browser reload. */
     const tryRejoinRoom = () => {
+      if (pendingJoin.current) return;
       const roomId = sessionStorage.getItem(ACTIVE_ROOM_KEY);
-      const savedName = sessionStorage.getItem('playerName');
-      if (roomId && savedName) {
+      const playerName = sessionStorage.getItem(PLAYER_NAME_KEY);
+      if (roomId && playerName) {
         socket.emit('join_room', {
           roomId,
-          playerName: savedName,
+          playerName,
           clientOrigin: clientOrigin(),
         });
       }
@@ -157,7 +158,9 @@ export function useGameSocket(
       if (pendingJoin.current) {
         socket.emit('join_room', pendingJoin.current);
         pendingJoin.current = null;
+        return;
       }
+      tryRejoinRoom();
     };
 
     socket.on('connect', onConnect);
@@ -172,11 +175,58 @@ export function useGameSocket(
     socket.on('connect_error', () => {
       getSetters().setConnected?.(false);
       getSetters().setError?.(
-        'Cannot reach game server. Start the backend on port 3001, then refresh.'
+        'Cannot reach game server. Run: npm run dev (from project root) or start the backend on port 3001, then refresh.'
       );
     });
 
     socket.on('error', ({ message }: { message: string }) => getSetters().setError?.(message));
+
+    const applySnapshot = (snapshot: {
+      phase: GamePhase;
+      players: Player[];
+      round?: number;
+      totalRounds?: number;
+      drawerId?: string | null;
+      timeLeft?: number;
+      wordSelectTimeLeft?: number;
+      hints?: string;
+      strokes?: Stroke[];
+      messages?: ChatMessage[];
+      wordOptions?: string[] | null;
+      currentWord?: string | null;
+      roundWasGuessed?: boolean;
+      lastGuesserName?: string | null;
+      transitionSeconds?: number;
+      leaderboard?: Player[];
+      winnerName?: string;
+    }) => {
+      const st = getSetters();
+      st.setPhase?.(snapshot.phase);
+      st.setPlayers?.(snapshot.players);
+      if (snapshot.round !== undefined) st.setRound?.(snapshot.round);
+      if (snapshot.totalRounds !== undefined) st.setTotalRounds?.(snapshot.totalRounds);
+      if (snapshot.drawerId !== undefined) st.setDrawerId?.(snapshot.drawerId);
+      if (snapshot.timeLeft !== undefined) st.setTimeLeft?.(snapshot.timeLeft);
+      if (snapshot.wordSelectTimeLeft !== undefined) {
+        st.setWordSelectTimeLeft?.(snapshot.wordSelectTimeLeft);
+      }
+      if (snapshot.hints !== undefined) st.setHints?.(snapshot.hints);
+      if (snapshot.strokes) st.setStrokes?.(snapshot.strokes);
+      if (snapshot.messages) st.setMessages?.(snapshot.messages);
+      if (snapshot.wordOptions !== undefined) st.setWordOptions?.(snapshot.wordOptions);
+      if (snapshot.currentWord !== undefined) st.setCurrentWord?.(snapshot.currentWord);
+      if (snapshot.roundWasGuessed !== undefined) {
+        st.setRoundWasGuessed?.(snapshot.roundWasGuessed);
+      }
+      if (snapshot.lastGuesserName !== undefined) {
+        st.setLastGuesserName?.(snapshot.lastGuesserName);
+      }
+      if (snapshot.transitionSeconds !== undefined) {
+        st.setTransitionSeconds?.(snapshot.transitionSeconds);
+      }
+      if (snapshot.leaderboard) st.setLeaderboard?.(snapshot.leaderboard);
+      if (snapshot.winnerName) st.setWinnerName?.(snapshot.winnerName);
+    };
 
     const applyRoom = (data: {
       roomId: string;
@@ -185,6 +235,7 @@ export function useGameSocket(
       hostId: string;
       settings: RoomSettings;
       players: Player[];
+      snapshot?: Parameters<typeof applySnapshot>[0] | null;
     }) => {
       const st = getSetters();
       st.setError?.('');
@@ -197,13 +248,40 @@ export function useGameSocket(
       st.setHostId?.(data.hostId);
       st.setSettings?.(data.settings);
       st.setPlayers?.(data.players);
-      st.setPhase?.('lobby');
       sessionStorage.setItem(ACTIVE_ROOM_KEY, data.roomId);
       window.history.replaceState({}, '', `?room=${data.roomId}`);
+
+      if (data.snapshot) {
+        applySnapshot(data.snapshot);
+      } else {
+        st.setPhase?.('lobby');
+      }
     };
 
     socket.on('room_created', applyRoom);
     socket.on('room_joined', applyRoom);
+
+    socket.on(
+      'player_reconnected',
+      ({
+        players: p,
+        hostId: newHostId,
+        oldPlayerId,
+      }: {
+        players: Player[];
+        hostId?: string;
+        oldPlayerId: string;
+      }) => {
+        const st = getSetters();
+        st.setPlayers?.(p);
+        if (newHostId) st.setHostId?.(newHostId);
+        st.setDrawerId?.((current) => {
+          if (current !== oldPlayerId) return current;
+          const drawer = p.find((pl) => pl.isDrawer);
+          return drawer?.id ?? null;
+        });
+      }
+    );
 
     socket.on(
       'player_joined',

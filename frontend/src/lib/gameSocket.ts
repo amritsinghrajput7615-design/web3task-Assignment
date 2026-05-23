@@ -1,7 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 
 /** Empty = same origin; Vite proxies /socket.io → backend in dev */
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || undefined;
+const raw = import.meta.env.VITE_SERVER_URL;
+const SERVER_URL = raw && String(raw).trim() ? String(raw).trim() : undefined;
 
 let socket: Socket | null = null;
 

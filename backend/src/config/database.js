@@ -17,7 +17,7 @@ class Database {
       mongoose.set('strictQuery', true);
 
       await mongoose.connect(uri, {
-        serverSelectionTimeoutMS: 15000,
+        serverSelectionTimeoutMS: 5000,
         socketTimeoutMS: 45000,
         maxPoolSize: 10,
       });

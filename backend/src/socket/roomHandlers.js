@@ -19,6 +19,16 @@ function buildRoomPayload(room, socket, clientOrigin) {
   };
 }
 
+function buildReconnectPayload(room, socket, clientOrigin) {
+  const base = buildRoomPayload(room, socket, clientOrigin);
+  const inGame = room.game.phase !== 'lobby';
+  return {
+    ...base,
+    reconnected: true,
+    snapshot: inGame ? room.game.getReconnectSnapshot(socket.id) : null,
+  };
+}
+
 function registerRoomHandlers(io, socket) {
   socket.on('create_room', ({ hostName, settings, clientOrigin }) => {
     const roomId = generateRoomId();
@@ -37,13 +47,31 @@ function registerRoomHandlers(io, socket) {
       return;
     }
 
-    if (room.game.phase !== 'lobby') {
-      socket.emit('error', { message: 'Game already in progress' });
+    if (room.isBanned(playerName)) {
+      socket.emit('error', { message: 'You are banned from this room' });
       return;
     }
 
-    if (room.isBanned(playerName)) {
-      socket.emit('error', { message: 'You are banned from this room' });
+    const existingReconnect = room.reconnectPlayerByName(socket.id, playerName);
+    if (existingReconnect) {
+      room.reclaimHost(socket.id, playerName);
+      socket.join(room.roomId);
+
+      const payload = buildReconnectPayload(room, socket, clientOrigin || '');
+      socket.emit('room_joined', payload);
+
+      if (existingReconnect.oldSocketId !== socket.id) {
+        room.broadcast('player_reconnected', {
+          oldPlayerId: existingReconnect.oldSocketId,
+          players: room.getPublicPlayers(),
+          hostId: room.hostId,
+        });
+      }
+      return;
+    }
+
+    if (room.game.phase !== 'lobby') {
+      socket.emit('error', { message: 'Game already in progress' });
       return;
     }
 
@@ -142,7 +170,13 @@ function registerRoomHandlers(io, socket) {
   socket.on('disconnect', () => {
     const room = roomStore.getRoomBySocketId(socket.id);
     if (!room) return;
-    removeMemberFromRoom(io, room, socket.id, { reason: 'disconnect' });
+    const socketId = socket.id;
+    room.scheduleDisconnectRemoval(socketId, () => {
+      const currentRoom = roomStore.getRoom(room.roomId);
+      if (!currentRoom) return;
+      if (!currentRoom.hasPlayer(socketId)) return;
+      removeMemberFromRoom(io, currentRoom, socketId, { reason: 'disconnect' });
+    });
   });
 }
 

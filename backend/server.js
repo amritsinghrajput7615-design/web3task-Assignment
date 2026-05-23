@@ -62,17 +62,7 @@ io.on('connection', (socket) => {
 });
 
 async function start() {
-  await database.connect();
-
-  const PORT = process.env.PORT || 3001;
-  server.listen(PORT, () => {
-    console.log(`Skribbl server running on http://localhost:${PORT}`);
-    const status = database.getStatus();
-    console.log(
-      `MongoDB: ${status.connected ? `connected → ${status.database}` : 'NOT connected — history will not save'}`
-    );
-    if (status.lastError) console.log(`MongoDB last error: ${status.lastError}`);
-  });
+  const PORT = Number(process.env.PORT) || 3001;
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
@@ -82,6 +72,17 @@ async function start() {
     }
     process.exit(1);
   });
+
+  server.listen(PORT, () => {
+    console.log(`Skribbl server running on http://localhost:${PORT}`);
+  });
+
+  const mongoOk = await database.connect();
+  const status = database.getStatus();
+  console.log(
+    `MongoDB: ${mongoOk && status.connected ? `connected → ${status.database}` : 'NOT connected — history will not save'}`
+  );
+  if (status.lastError) console.log(`MongoDB last error: ${status.lastError}`);
 }
 
 start();
